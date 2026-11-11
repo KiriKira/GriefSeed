@@ -2,10 +2,12 @@
 
 更新：2026-11-11。状态：**计划阶段，尚未开始实施**。
 
-GriefSeed 是可以一键部署到 Cloudflare 的轻量服务端，面向两类人：
+**GriefSeed 是 Worker 版的 SoulGem**：同一套手机协议，跑在 Cloudflare Workers + Durable Objects 上，
+可以一键部署。SoulGem 自带 coturn，GriefSeed 自带的 TURN 就是 Cloudflare Realtime TURN，
+相关代码（申请凭据、发放来源 token、管理页）都放在本仓库里。
 
-- 已有 SoulGem 节点的人：拿它当 Cloudflare TURN 的凭据来源，或者当冷备节点。
-- 没有服务器的人：拿它当唯一节点，加上 Cloudflare TURN，就能使用 Madoka + Homura 这套系统。
+- 没有服务器的人：把它当唯一节点，就能使用 Madoka + Homura 这套系统。
+- 已有 SoulGem 的人：把它当冷备节点；也可以只用它的 TURN，作为独立中继来源配给手机。
 
 三端整体目标、已核实的 Cloudflare 额度和 TURN 来源协议，见 SoulGem 的
 [TURN 与节点解耦计划](https://github.com/KiriKira/SoulGem/blob/main/docs/plan-turn-sources.md)。
@@ -15,8 +17,8 @@ GriefSeed 是可以一键部署到 Cloudflare 的轻量服务端，面向两类�
 
 讨论过 Vercel 一键部署，结论是不做，也不两者都做：
 
-- 凭据来源（G3a）发的是 Cloudflare TURN 凭据，用户无论如何都要有 Cloudflare 账号；放到 Vercel 只会多一个账号。
-- 节点（G3b）需要每个 owner 一份串行状态、一条长连接、精确定时。Durable Objects 正好对应：自带 SQLite、
+- 自带的 TURN 是 Cloudflare 的，用户无论如何都要有 Cloudflare 账号；放到 Vercel 只会多一个账号。
+- 节点需要每个 owner 一份串行状态、一条长连接、精确定时。Durable Objects 正好对应：自带 SQLite、
   WebSocket 可休眠、alarm 能精确触发。Vercel Hobby 没有自带数据库；WebSocket 2026-06 才公开测试，
   单个连接最长 300 秒；cron 每天最多一次。要拼三四个服务才能接近。
 - 同时支持两个平台会让存储、连接管理和测试都变成两套，维护成本翻倍。
@@ -24,9 +26,9 @@ GriefSeed 是可以一键部署到 Cloudflare 的轻量服务端，面向两类�
 保留余地：协议逻辑写成和平台无关的纯 TypeScript 模块（配对、短信账本、呼叫状态机），通过存储接口读写；
 Worker/DO 只是其中一种适配器。以后如果需要，再加别的适配器，不用重写。这样也方便直接在 Node 里跑单元测试。
 
-## 阶段一（T5）：TURN 凭据来源
+## 阶段一（T5）：自带的 Cloudflare TURN
 
-实现 SoulGem 计划里的“中继来源协议 v1”：
+先做 GriefSeed 的 TURN 部分，它最小、能单独交付，阶段二的节点也直接复用。对外实现 SoulGem 计划里的“中继来源协议 v1”：
 
 ```
 GET /v1/rtc/ice-servers
@@ -46,7 +48,7 @@ Authorization: Bearer <来源 token>
 完成门槛：从“Deploy to Cloudflare”按钮全新部署，在管理页发放 token，手机扫码添加来源后，经 Cloudflare TURN 强制中继完成通话；
 实测一天的请求量；日志里不出现凭据和 token。
 
-## 阶段二（T6）：Worker 版节点
+## 阶段二（T6）：节点本体
 
 开始前另写设计文档，至少覆盖下面几点：
 
