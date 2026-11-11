@@ -37,17 +37,23 @@ Authorization: Bearer <来源 token>
 
 - Cloudflare TURN key ID 和 API token 作为 Worker secret 保存，**永远不下发给手机**。
 - 调用 `generate-ice-servers` 申请凭据；过滤端口 53 的地址；每类传输方式只保留一个地址（UDP 3478、TCP 3478、TLS 443）。
-- 来源 token 由部署者发放和吊销，可以发给多个人；每个 token 有名字，便于吊销和看用量。
-  token 只存哈希。具体的管理方式（管理页、命令行或 API）实施时再定。
+- 来源 token 由部署者发放和吊销，可以发给多个人；每个 token 有名字，便于吊销和看用量；token 只存哈希。
+- **Worker 自带管理页**（已决定）：部署时设置一个管理密码（secret），打开网页就能发放、吊销 token、看用量，
+  并显示给手机扫的 `gsm2sip://relay` 链接和二维码。不需要命令行。链接含 token，只在发放时显示一次。
 - 凭据和通话无关，TTL 暂定 24 小时；手机端缓存，所以每部手机每天只需要很少几次请求。
 - 这一阶段不需要 Durable Objects，但 wrangler 配置要为阶段二预留，避免以后迁移部署。
 
-完成门槛：从“Deploy to Cloudflare”按钮全新部署，不用命令行；手机配上来源后，经 Cloudflare TURN 强制中继完成通话；
+完成门槛：从“Deploy to Cloudflare”按钮全新部署，在管理页发放 token，手机扫码添加来源后，经 Cloudflare TURN 强制中继完成通话；
 实测一天的请求量；日志里不出现凭据和 token。
 
 ## 阶段二（T6）：Worker 版节点
 
 开始前另写设计文档，至少覆盖下面几点：
+
+- **只服务一个 owner**（已决定）：一个部署只服务一个 owner，短信只存在部署者自己的账号里。
+  分享给别人时，阶段一的 TURN token 本来就支持多人；节点让每个人自己点一次部署。
+- **自带的 TURN 就是 Cloudflare**：媒体准入里的 `ice_servers` 下发 Cloudflare TURN 凭据，并声明 `ice_servers_v1`，
+  所以手机把 GriefSeed 加为节点时会自动带上它的 TURN。
 
 - **协议子集**：手机实际用到的 SoulGem 接口——配对、令牌、SIM 绑定、短信 command/event、RTC 呼叫控制 v1、
   Reception v2、唤醒 WebSocket、`/v1/capabilities`。用 SoulGem 的 fixtures 和 OpenAPI 做契约测试，行为逐项对齐。
@@ -59,7 +65,7 @@ Authorization: Bearer <来源 token>
   - 用推送唤醒主手机，Worker 向外 fetch 不计费。
 
   目标：冷备时每个用户每天一百次左右。这需要 Madoka、Homura 配合改动。
-- **多人共用的隐私**：一个部署给多人用时，短信内容需要旧手机和主手机之间端到端加密，GriefSeed 只转发密文。
+- **以后支持多个 owner**：必须先做旧手机和主手机之间的短信端到端加密，GriefSeed 只转发密文。
 - **作为 mesh 节点**：要通过 Madoka 加节点时的 `mesh` 扩展检查和 `install_id` 一致性检查。
 
 ## 一键部署与升级
@@ -75,8 +81,13 @@ Authorization: Bearer <来源 token>
 - 不和 Kyubey 合并：Kyubey 里放的是 App 的 Firebase 推送凭据，只能由维护者运营；GriefSeed 由每个用户部署到自己的账号。
 - 不替代 SoulGem：有服务器的人仍然推荐自建 SoulGem。
 
-## 待决定的问题
+## 已决定（2026-11-11）
 
-1. 来源 token 的管理方式：管理页、wrangler 命令还是管理 API。
-2. 使用 Cloudflare Realtime 是否必须绑定付款方式（文档没写，需要实际注册确认）。
-3. 阶段二是否允许一个部署服务多个 owner，还是一个部署只服务一个 owner（后者更简单，隐私问题也更小）。
+- Cloudflare API token 只保存在 Worker 里，不放在手机上。
+- 来源 token 用 Worker 自带的管理页管理。
+- 节点阶段先只支持一个 owner。
+- 手机加节点时自动带上它的 TURN，也可以扫码单独配对中继来源。
+
+## 待确认
+
+1. 使用 Cloudflare Realtime 是否必须绑定付款方式（文档没写，需要实际注册确认）。
