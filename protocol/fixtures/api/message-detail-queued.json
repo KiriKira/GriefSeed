@@ -1,0 +1,16 @@
+{
+  "message_id": "e5000000-0000-4000-8000-000000000001",
+  "command_id": "e6000000-0000-4000-8000-000000000001",
+  "gateway_id": "e2000000-0000-4000-8000-000000000001",
+  "sim_id": "e3000000-0000-4000-8000-000000000001",
+  "mapping_revision": 4,
+  "direction": "outbound",
+  "from": null,
+  "to": "+8613800000000",
+  "text": "中文与 emoji 📱",
+  "status": "queued",
+  "part_count": null,
+  "created_at": "2026-10-03T12:00:00Z",
+  "expires_at": "2026-10-03T12:05:00Z",
+  "parts": []
+}

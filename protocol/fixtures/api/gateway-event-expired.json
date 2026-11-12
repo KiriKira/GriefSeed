@@ -1,0 +1,16 @@
+{
+  "protocol_version": 1,
+  "event_id": "e7000000-0000-4000-8000-000000000003",
+  "gateway_id": "e2000000-0000-4000-8000-000000000001",
+  "sequence": 44,
+  "occurred_at": "2026-10-03T12:03:00Z",
+  "type": "sms.command_state",
+  "sim_id": "e3000000-0000-4000-8000-000000000001",
+  "mapping_revision": 4,
+  "payload": {
+    "message_id": "e5000000-0000-4000-8000-000000000003",
+    "command_id": "e6000000-0000-4000-8000-000000000003",
+    "state": "expired",
+    "error": "Command expired before dispatch"
+  }
+}

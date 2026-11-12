@@ -1,0 +1,8 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>GriefSeed 初始化配置</title>
+<style>body{max-width:700px;margin:3rem auto;font:16px system-ui;padding:1rem}pre{white-space:pre-wrap;overflow-wrap:anywhere}button{font:inherit;padding:1rem}</style>
+<h1>GriefSeed 初始化配置</h1><p>下载此文件后在浏览器本地打开。配置仅在当前页面生成，不发送网络请求。保存到安全位置；升级时继续使用原配置。</p>
+<button id="generate">生成一套新部署配置</button><pre id="output"></pre><p>仅用于首次部署。不要用新生成的配置覆盖已有部署，否则原来源 token 将失效。</p>
+<script>
+function random(n){return btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(n)))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
+document.getElementById('generate').onclick=()=>{const data={DEPLOYMENT_ID:random(24),TOKEN_KEYS:JSON.stringify({primary:random(32)}),ADMIN_PASSWORD:random(24)};document.getElementById('output').textContent=JSON.stringify(data,null,2);};
+</script></html>

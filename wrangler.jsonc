@@ -1,0 +1,8 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "griefseed", "main": "src/index.ts", "compatibility_date": "2026-08-01", "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {"bindings": [{"name": "DEPLOYMENT", "class_name": "Deployment"}]},
+  "migrations": [{"tag": "v1", "new_sqlite_classes": ["Deployment"]}],
+  "vars": {"TOKEN_KID": "primary", "CREDENTIAL_TTL": "86400", "NODE_ENABLED": "true"},
+  "observability": {"enabled": false}
+}

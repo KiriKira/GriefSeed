@@ -1,0 +1,7 @@
+# Set a unique stable deployment identifier. Preserve it on upgrades.
+DEPLOYMENT_ID=
+# JSON object mapping TOKEN_KID to a base64url 32-byte secret. Preserve old keys during rotation.
+TOKEN_KEYS=
+ADMIN_PASSWORD=
+TURN_KEY_ID=
+TURN_API_TOKEN=

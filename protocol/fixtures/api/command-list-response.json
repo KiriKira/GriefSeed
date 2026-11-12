@@ -1,0 +1,17 @@
+{
+  "commands": [
+    {
+      "command_id": "e6000000-0000-4000-8000-000000000001",
+      "message_id": "e5000000-0000-4000-8000-000000000001",
+      "gateway_id": "e2000000-0000-4000-8000-000000000001",
+      "sim_id": "e3000000-0000-4000-8000-000000000001",
+      "mapping_revision": 4,
+      "to": "+8613800000000",
+      "text": "中文与 emoji 📱",
+      "expires_at": "2026-10-03T12:05:00Z",
+      "payload_sha256": "9fbe44cc86b255cd2dddb85580812e1f52ec58fc82ef4e2410da256a650fb300",
+      "state": "queued"
+    }
+  ],
+  "next_cursor": null
+}

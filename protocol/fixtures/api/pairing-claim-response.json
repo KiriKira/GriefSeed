@@ -1,0 +1,9 @@
+{
+  "owner_id": "e1000000-0000-4000-8000-000000000001",
+  "device_id": "e2000000-0000-4000-8000-000000000001",
+  "role": "gateway",
+  "access_token": "fixture-access-token",
+  "access_expires_at": "2026-10-03T12:15:00Z",
+  "refresh_token": "fixture-refresh-token",
+  "refresh_expires_at": "2026-11-02T12:00:00Z"
+}

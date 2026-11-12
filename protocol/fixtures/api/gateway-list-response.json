@@ -1,0 +1,19 @@
+{
+  "items": [
+    {
+      "gateway_id": "e2000000-0000-4000-8000-000000000001",
+      "device_name": "Old phone",
+      "online": true,
+      "last_seen_at": "2026-10-03T12:00:00Z",
+      "mapping_revision": 4,
+      "sequence": 42,
+      "protocol_version": 1,
+      "app_version": "1.0.0",
+      "root": true,
+      "battery_percent": 87,
+      "charging": true,
+      "install_id": "e9000000-0000-4000-8000-000000000001",
+      "rtc_call_control_ready": true
+    }
+  ]
+}

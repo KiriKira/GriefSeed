@@ -1,6 +1,6 @@
 # GriefSeed 计划
 
-更新：2026-11-12。状态：**计划阶段，尚未开始实施**。
+更新：2026-11-12。状态：**T5/T6 代码及本地自动化已实现，等待设备与真实 Cloudflare 验收**。见 [验证边界](docs/validation.md)。
 
 **GriefSeed 是 Worker 版的 SoulGem**：同一套手机协议，跑在 Cloudflare Workers + Durable Objects 上，
 可以一键部署。SoulGem 自带 coturn，GriefSeed 自带的 TURN 就是 Cloudflare Realtime TURN，

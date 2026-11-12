@@ -1,0 +1,1401 @@
+openapi: 3.1.0
+info:
+  title: SoulGem server API
+  version: 0.4.0
+  description: >-
+    HTTP and WebSocket contract for gsm2sip protocol v1. See docs/protocol-v1.md
+    and docs/server-wire-addendum.md. /ws is a wake-only channel. Calls use
+    RTC call control over paired HTTPS sessions and WebRTC media; SIP was
+    removed in 0.4. See docs/rtc-call-control-v1.md.
+servers:
+  - url: https://{apiHost}/v1
+    variables:
+      apiHost:
+        default: api.example.invalid
+security:
+  - bearerAuth: []
+paths:
+  /rtc/control/capability:
+    post:
+      operationId: advertiseRTCCallControl
+      description: Advertise this authenticated device's protocol choice. Renew every 25 seconds; expires after 90 seconds, unless a sleep grant (sleep_seconds) is running. Does not change an existing call's adapter.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RTCControlCapability'}
+      responses:
+        '200': {description: Capability recorded.}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /rtc/control/incoming:
+    post:
+      operationId: createRTCIncomingCall
+      description: >-
+        Gateway reports a genuine ringing cellular call. A shared call_id
+        identifies all node offers; no cellular answer follows from this
+        request or a client's accept reservation. The call rings every client
+        of the owner that receives incoming calls now: a reception v2 client
+        while incoming_enabled (asleep or offline included), any other client
+        by its call-control capability.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RTCIncomingCall'}
+      responses:
+        '201': {$ref: '#/components/responses/RTCControlSnapshot'}
+        '200': {$ref: '#/components/responses/RTCControlSnapshot'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '503':
+          description: >-
+            No call was created. NO_INCOMING_SUBSCRIBERS (only to a gateway
+            that sent remaining_ring_ms): no client of this node receives
+            incoming calls; offer the call to the other nodes.
+            GATEWAY_UNAVAILABLE: the same for older gateways, or the gateway
+            itself is not ready.
+  /rtc/control/calls:
+    post:
+      operationId: createRTCOutgoingReservation
+      description: Client-only durable reservation. Exact operation replay returns its committed ACK; a different payload conflicts. This request does not dial the modem.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RTCOutgoingCall'}
+      responses:
+        '201': {$ref: '#/components/responses/RTCControlSnapshot'}
+        '200': {$ref: '#/components/responses/RTCControlSnapshot'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+    get:
+      operationId: listRTCControlCalls
+      description: Authenticated device-scoped snapshot polling. At most 32 calls, live calls first, terminal calls retained in the list for 15 minutes. Polling renews only this participant's control lease and cannot extend an invitation or revive unknown.
+      responses:
+        '200':
+          description: Scoped calls and suggested poll interval.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version, calls, poll_after_ms]
+                properties:
+                  version: {const: 1}
+                  poll_after_ms: {const: 750}
+                  calls:
+                    type: array
+                    maxItems: 32
+                    items: {$ref: '#/components/schemas/RTCControlSnapshot'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /rtc/control/incoming-policy:
+    get:
+      operationId: getRTCIncomingPolicy
+      deprecated: true
+      description: Gateway only. Answered for gateways older than 0.4 so they are never told to use SIP; it always selects RTC. Older gateways are still not supported against 0.4.
+      responses:
+        '200':
+          description: Incoming calls use RTC call control.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version, call_control]
+                properties:
+                  version: {const: 1}
+                  call_control: {const: rtc}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /rtc/control/calls/{call_id}:
+    parameters:
+      - {name: call_id, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      operationId: getRTCControlCall
+      responses:
+        '200': {$ref: '#/components/responses/RTCControlSnapshot'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /rtc/control/calls/{call_id}/operations:
+    parameters:
+      - {name: call_id, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      operationId: operateRTCControlCall
+      description: >-
+        Durable operation deduplication precedes revision CAS, while current
+        credentials are always reauthorized. Gateway-only winner follows the
+        installation-wide local winner CAS and negotiated media. Gateway-only
+        dispatch follows media negotiation and precedes its durable local modem
+        dispatch ledger. Only genuine cellular ACTIVE plus started PCM authorizes
+        active. Only genuine gateway cellular END releases a dispatched slot.
+        A failure never authorizes a new cellular call_id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RTCControlOperation'}
+      responses:
+        '200': {$ref: '#/components/responses/RTCControlSnapshot'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /capabilities:
+    get:
+      operationId: getCapabilities
+      security: []
+      description: Public, secret-free list of optional protocol extensions; clients also use it to probe node reachability.
+      responses:
+        '200':
+          description: Supported extensions.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Capabilities'}
+  /rtc/ice-servers:
+    get:
+      operationId: getIceServers
+      description: Call-independent ICE servers for the authenticated device. Does not create or renew a call. Preserve configured URLs and ports.
+      responses:
+        '200':
+          description: ICE configuration with conservative expiry. Never cached by HTTP intermediaries.
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ice_servers, expires_at]
+                properties:
+                  ice_servers:
+                    type: array
+                    items:
+                      type: object
+                      required: [urls]
+                      properties:
+                        urls: {type: array, items: {type: string}}
+                        username: {type: string}
+                        credential: {type: string}
+                  expires_at: {type: string, format: date-time}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '503': {description: RTC or database unavailable.}
+  /ws:
+    get:
+      servers:
+        - url: wss://api.example.invalid/v1
+          description: Production clients use WSS with normal CA and hostname verification.
+      operationId: wakeWebSocket
+      description: >-
+        Upgrade with the current Authorization Bearer access token. Query parameters
+        and request bodies are rejected. Both client and gateway roles are allowed.
+        After the 101 upgrade the server immediately sends WakeSyncRequired, then
+        sends it again only when the caller-scoped durable event or pending-command
+        marker changes. The frame requests an HTTPS sync and carries no IDs or data.
+        Server pings every 20 seconds; clients must answer pings. Any client data
+        frame closes with 1008, oversized data (>4 KiB) with 1009, and expired,
+        rotated, or revoked credentials with 1008. A per-device limit of two
+        connections applies. This channel does not represent call readiness.
+        A client may send Wake-Ping-Seconds (20 to 300, else 400
+        INVALID_WAKE_PING) to have the server ping at that interval instead;
+        it then answers within the interval plus 25 seconds and sends no
+        pings of its own. Each ping wakes a sleeping phone.
+      responses:
+        '101':
+          description: WebSocket upgrade completed; messages follow the description above.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WakeSyncRequired'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /pairings/claim:
+    post:
+      security: []
+      operationId: claimPairing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PairingClaim'}
+      responses:
+        '200':
+          description: Pairing code consumed and device credentials issued.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PairingResult'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /auth/refresh:
+    post:
+      security: []
+      operationId: refreshSession
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: Persist before refresh. With server encryption configured, retry the identical old token and key within the current refresh expiry to recover a lost response. A later rotation or revocation invalidates recovery.
+          schema: {type: string, minLength: 16, maxLength: 128}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RefreshRequest'}
+      responses:
+        '200':
+          description: Previous refresh and access tokens are revoked.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SessionTokens'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /auth/revoke:
+    post:
+      security: []
+      operationId: revokeSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RefreshRequest'}
+      responses:
+        '204': {description: Session revoked.}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /clients:
+    get:
+      operationId: listClients
+      description: >-
+        Client-role only. Lists paired client devices owned by the caller, including
+        revoked devices, and marks exactly the authenticated device with is_self.
+        Platform is open descriptive metadata; it does not grant OS capabilities.
+      responses:
+        '200':
+          description: Owner-scoped paired clients, with no credentials.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ClientList'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503':
+          description: Database unavailable.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+  /gateways:
+    get:
+      operationId: listGateways
+      responses:
+        '200':
+          description: Gateways visible to the caller's owner.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GatewayList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /gateways/{gateway_id}/sims:
+    get:
+      operationId: listSims
+      parameters:
+        - {$ref: '#/components/parameters/GatewayId'}
+      responses:
+        '200':
+          description: SIM bindings issued to this gateway.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SimList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /gateways/{gateway_id}/heartbeat:
+    post:
+      operationId: heartbeat
+      parameters:
+        - {$ref: '#/components/parameters/GatewayId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/HeartbeatRequest'}
+      responses:
+        '200':
+          description: Heartbeat committed.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/HeartbeatResult'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /gateways/{gateway_id}/sim-bindings:
+    post:
+      operationId: updateSimBindings
+      parameters:
+        - {$ref: '#/components/parameters/GatewayId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - {$ref: '#/components/schemas/SimProposalRequest'}
+                - {$ref: '#/components/schemas/SimConfirmationRequest'}
+      responses:
+        '200':
+          description: Proposal or confirmation result, including server SIM IDs.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SimBindingResult'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /messages:
+    get:
+      operationId: listMessages
+      parameters:
+        - {name: cursor, in: query, schema: {type: string}}
+        - {name: sim_id, in: query, schema: {type: string, format: uuid}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+      responses:
+        '200':
+          description: Caller-scoped page of messages.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MessagePage'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    post:
+      operationId: createMessage
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateMessage'}
+      responses:
+        '202':
+          description: Message and command committed atomically.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MessageAccepted'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /messages/{message_id}:
+    get:
+      operationId: getMessage
+      parameters:
+        - {name: message_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Message and per-part execution state.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MessageDetail'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /gateways/{gateway_id}/commands:
+    get:
+      operationId: listCommands
+      parameters:
+        - {$ref: '#/components/parameters/GatewayId'}
+        - {name: cursor, in: query, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 100}}
+      responses:
+        '200':
+          description: Queued and unfinished commands owned by this gateway.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [commands, next_cursor]
+                properties:
+                  commands:
+                    type: array
+                    items: {$ref: '#/components/schemas/Command'}
+                  next_cursor: {type: [string, 'null']}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /gateways/{gateway_id}/commands/{command_id}/claim:
+    post:
+      operationId: claimCommand
+      parameters:
+        - {$ref: '#/components/parameters/GatewayId'}
+        - {name: command_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [payload_sha256]
+              properties:
+                payload_sha256: {type: string, pattern: '^[a-f0-9]{64}$'}
+      responses:
+        '200':
+          description: Sticky idempotent claim; command is never transferred.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Command'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /gateways/{gateway_id}/events:batch:
+    post:
+      operationId: uploadEvents
+      parameters:
+        - {$ref: '#/components/parameters/GatewayId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [events]
+              properties:
+                events:
+                  type: array
+                  minItems: 1
+                  maxItems: 50
+                  items: {$ref: '#/components/schemas/GatewayEvent'}
+      responses:
+        '200':
+          description: Per-event ACK after the whole batch commits.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [acks]
+                properties:
+                  acks:
+                    type: array
+                    items:
+                      type: object
+                      required: [event_id, event_cursor, duplicate]
+                      properties:
+                        event_id: {type: string, format: uuid}
+                        event_cursor: {type: string}
+                        duplicate: {type: boolean}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+  /events:
+    get:
+      operationId: listEvents
+      parameters:
+        - {name: cursor, in: query, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+      responses:
+        '200':
+          description: Durable owner-scoped events for client catch-up.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EventPage'}
+  /events/ack:
+    post:
+      operationId: acknowledgeClientEvents
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [durable_cursor]
+              properties:
+                durable_cursor: {type: string, minLength: 1}
+      responses:
+        '200':
+          description: Monotonic per-device receipt after the client reports SQLite commit. Events remain retained. This does not acknowledge notification display or human reading.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ClientEventReceipt'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /calls:
+    get:
+      operationId: listCalls
+      parameters:
+        - {name: cursor, in: query, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100}}
+      responses:
+        '200':
+          description: >-
+            Current call snapshots for this authenticated client. Incoming rows are
+            this client's participant projections, not a shared owner-level state.
+            Pagination is ordered by descending created_at and call_id; each row carries the
+            latest state_revision for this participant. After a wake hint, fetch
+            pages to reconcile the current view.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CallPage'}
+  /calls/{call_id}:
+    get:
+      operationId: getCall
+      parameters:
+        - {name: call_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: >-
+            This authenticated client's view of the business call. For incoming
+            calls client_id is the requesting client device. A pending participant
+            may see only its own participant state.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RemoteCall'}
+        '404': {description: Call is unavailable to this client.}
+  /devices/self/push-endpoint:
+    put:
+      operationId: putPushToken
+      description: >-
+        Client only. Registers the device's push endpoint (a Kyubey relay URL
+        or another compatible endpoint) after it accepts a POST of
+        {"kind":"check","device_id":...}, so only endpoints that reach the
+        phone are stored. For a device on reception version 1 each later
+        wake-up is a POST of {"kind":"sms"|"call","device_id":...} with
+        Urgency high and TTL 60. A reception v2 device gets wire 2 instead:
+        {"v":2,"kind":"call"|"sms","device_id","wake_id","revision",
+        "endpoint_generation"} plus "call_id" for a call, one per changed call
+        with the TTL header set to what is left of its ring window (Urgency
+        high), and SMS apart with TTL 86400 (Urgency high when a message
+        arrived, else normal). The phone then synchronises over HTTPS. 404 or
+        410 from the endpoint removes it. Registering does not announce
+        earlier events; a different endpoint is a new endpoint_generation.
+        Only public https:// endpoints are accepted unless the node allows
+        private ones.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [endpoint]
+              properties:
+                endpoint: {type: string, format: uri, minLength: 1, maxLength: 8192}
+      responses:
+        '200':
+          description: Token stored; wake-ups will follow new events.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [push]
+                properties:
+                  push: {type: string, const: ready}
+                  endpoint_generation: {type: integer, minimum: 1, description: 'Unchanged when the same endpoint registers again.'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {description: 'PUSH_ENDPOINT_REJECTED: the endpoint does not reach this device.'}
+        '503': {description: 'PUSH_UNAVAILABLE: the endpoint is temporarily unavailable (retryable).'}
+    delete:
+      operationId: deletePushToken
+      responses:
+        '204': {description: Endpoint removed; no further wake-ups.}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    get:
+      operationId: getPushStatus
+      description: Client only. How this node's wake-ups for the device fare at its endpoint. The endpoint itself is not returned.
+      responses:
+        '200':
+          description: Push status.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [registered]
+                properties:
+                  registered: {type: boolean}
+                  failures: {type: integer, minimum: 0, description: Consecutive SMS (and wire 1) hand-offs the endpoint did not accept.}
+                  call_failures: {type: integer, minimum: 0, description: Consecutive wire 2 call hand-offs the endpoint did not accept.}
+                  endpoint_generation: {type: integer, minimum: 1}
+                  delivered_at: {type: string, format: date-time, description: When the endpoint last accepted a wake-up for this device.}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /devices/self/reception:
+    get:
+      operationId: getReception
+      description: Client only. Whether this node offers the device incoming calls and SMS wake-ups.
+      responses:
+        '200':
+          description: Current settings.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReceptionConfig'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    put:
+      operationId: putReception
+      description: >-
+        Client only, on a node advertising reception_v2. Replaces the settings
+        if they still have expected_revision (0 before the first write). At
+        version 2 the device is offered incoming calls while incoming_enabled,
+        without capability refreshes or sleep grants, and can place calls with
+        incoming calls off. Turning incoming off withdraws the device from
+        calls still ringing it, without hanging them up; a call it began to
+        accept goes on. sms_enabled off stops SMS wake-ups to the device
+        (push and WebSocket) until turned back on, when the backlog is
+        announced once; it does not stop the gateway or delete messages.
+        After a 409, or a lost answer, read the settings and write the latest
+        choice again.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ReceptionUpdate'}
+      responses:
+        '200':
+          description: Settings stored.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReceptionConfig'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {description: 'RECEPTION_REVISION_CONFLICT: the settings changed since expected_revision.'}
+        '503': {description: 'RTC_CONTROL_DISABLED: this node has no call control.'}
+  /devices/self/push-endpoint/test:
+    post:
+      operationId: testPush
+      description: >-
+        Client only, at most once a minute. Sends the device a silent "sms"
+        wake-up now (the relay does not deliver "check" hints), so the phone can
+        tell whether this node's pushes reach it. sent says whether the endpoint
+        accepted it; only the phone knows whether it arrived.
+      responses:
+        '200':
+          description: Test attempted.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [sent]
+                properties:
+                  sent: {type: boolean}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {description: 'PUSH_NOT_REGISTERED: no endpoint on this node.'}
+        '429': {description: 'PUSH_TEST_TOO_SOON: a test was sent in the last minute (retryable).'}
+        '503': {description: 'PUSH_UNAVAILABLE: this node sends no wake-ups.'}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+  parameters:
+    GatewayId:
+      name: gateway_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: {type: string, minLength: 16, maxLength: 128}
+  responses:
+    RTCControlSnapshot:
+      description: Committed independent call snapshot, scoped to the authenticated participant.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/RTCControlSnapshot'}
+    BadRequest:
+      description: Invalid request, query parameter, or missing WebSocket upgrade.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+    Unauthorized:
+      description: Missing, invalid, expired, or revoked credentials.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+    Forbidden:
+      description: Authenticated role or owner scope is insufficient.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+    NotFound:
+      description: Resource does not exist or is outside caller scope.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+    Conflict:
+      description: Idempotency, mapping revision, or state conflict.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+    RateLimited:
+      description: SMS rate budget exceeded.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+    PayloadTooLarge:
+      description: Batch exceeds event count or byte limits.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+  schemas:
+    RTCControlCapability:
+      type: object
+      additionalProperties: false
+      required: [version, enabled]
+      properties:
+        version: {type: integer, const: 1}
+        enabled: {type: boolean}
+        sleep_seconds:
+          type: integer
+          minimum: 0
+          maximum: 86400
+          description: Only to a node advertising rtc_sleep. A client with a push endpoint that last delivered without failure stays an incoming-call candidate for up to this long (capped at 1800) without the 90 s refresh, and is woken by push. A refresh without it ends the grant. The response then carries sleep_until.
+        global_decline:
+          type: boolean
+          description: Gateway only, to a node advertising global_decline_v1. The gateway decides decline_all and reports declined; a refresh without it withdraws that.
+    RTCControlCreate:
+      type: object
+      required: [version, operation_id, call_id, gateway_id, sim_id, mapping_revision, to]
+      properties:
+        version: {type: integer, const: 1}
+        operation_id: {$ref: '#/components/schemas/UUID'}
+        call_id: {$ref: '#/components/schemas/UUID'}
+        gateway_id: {$ref: '#/components/schemas/UUID'}
+        sim_id: {$ref: '#/components/schemas/UUID'}
+        mapping_revision: {type: integer, minimum: 1}
+        to: {type: string, maxLength: 64, pattern: '^[^\r\n]*$'}
+        from: {type: string, maxLength: 64, pattern: '^[^\r\n]*$'}
+        remaining_ring_ms:
+          type: integer
+          minimum: 1
+          maximum: 300000
+          description: >-
+            Incoming only, to a node advertising reception_v2. How long the
+            hosts may ring, measured on the gateway's monotonic clock from the
+            first cellular RINGING; the call expires after remaining_ring_ms.
+            A gateway that sees incoming_ring_until_end sends the 300000 bound
+            and ends the call itself when the cellular call ends, so hosts ring
+            until the caller or the network gives up; others send what is left
+            of a 25 s window. It is not part of the operation's identity: a
+            retry may send less and replays the first answer.
+    RTCOutgoingCall:
+      allOf:
+        - {$ref: '#/components/schemas/RTCControlCreate'}
+        - type: object
+          properties:
+            to: {type: string, minLength: 1}
+            from: {const: ''}
+          not: {required: [remaining_ring_ms]}
+      unevaluatedProperties: false
+    RTCIncomingCall:
+      allOf: [{$ref: '#/components/schemas/RTCControlCreate'}]
+      unevaluatedProperties: false
+    RTCControlOperation:
+      type: object
+      additionalProperties: false
+      required: [version, operation_id, revision, kind]
+      properties:
+        version: {type: integer, const: 1}
+        operation_id: {$ref: '#/components/schemas/UUID'}
+        revision: {type: integer, minimum: 1}
+        kind:
+          type: string
+          enum: [start, accept, release, winner, dispatch, ringing, active, reject, cancel, hangup, ended, answered_elsewhere, decline_all, declined]
+          description: >-
+            decline_all (client, only while the snapshot has global_decline):
+            the user declines the call for every device. It only records the
+            request (decline_requested); the gateway decides it against an
+            answer in its durable ledger and, after the real cellular END,
+            reports declined (gateway), which ends the call for every device
+            with reason declined. reject leaves only this device's part.
+        candidate_client_id: {$ref: '#/components/schemas/UUID'}
+    RTCControlSnapshot:
+      allOf:
+        - {$ref: '#/components/schemas/RemoteCall'}
+        - type: object
+          required: [version, call_control, end_requested, dispatched]
+          properties:
+            version: {type: integer, const: 1}
+            call_control: {const: rtc}
+            end_requested: {type: boolean}
+            dispatched: {type: boolean}
+            candidate_client_id: {$ref: '#/components/schemas/UUID'}
+            candidate_until: {type: string, format: date-time}
+            winner_client_id: {$ref: '#/components/schemas/UUID'}
+            global_decline: {type: boolean, description: 'Incoming call whose gateway decides decline_all.'}
+            decline_requested: {type: boolean, description: 'A host asked to decline the whole call; the gateway has not ended it yet.'}
+            remaining_ms:
+              type: integer
+              minimum: 0
+              description: >-
+                While the call rings or connects: milliseconds left before it
+                expires, by the server's clock when the snapshot was taken.
+                A phone times its ringing from receipt on its own monotonic
+                clock and never rings past it.
+    WakeSyncRequired:
+      type: object
+      additionalProperties: false
+      required: [protocol_version, type]
+      properties:
+        protocol_version: {const: 1}
+        type: {const: sync_required}
+        domains:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {type: string, enum: [call, sms]}
+          description: >-
+            Only to a reception v2 client: what changed. "call" asks for the
+            call-control snapshot, "sms" for the message events. Never "sms"
+            while the client has SMS wake-ups off; those changes are announced
+            once it turns them back on.
+    ReceptionConfig:
+      type: object
+      additionalProperties: false
+      required: [version, incoming_enabled, sms_enabled, revision]
+      properties:
+        version: {type: integer, enum: [1, 2]}
+        incoming_enabled: {type: boolean}
+        sms_enabled: {type: boolean}
+        revision:
+          type: integer
+          minimum: 0
+          description: 0 until the client first writes; version 1 then mirrors the call-control capability.
+    ReceptionUpdate:
+      type: object
+      additionalProperties: false
+      required: [version, expected_revision, incoming_enabled, sms_enabled]
+      properties:
+        version: {type: integer, enum: [1, 2]}
+        expected_revision: {type: integer, minimum: 0}
+        incoming_enabled: {type: boolean}
+        sms_enabled: {type: boolean}
+    UUID:
+      type: string
+      format: uuid
+    Timestamp:
+      type: string
+      format: date-time
+    PairingClaim:
+      type: object
+      additionalProperties: false
+      required: [pairing_code, device_name]
+      properties:
+        pairing_code: {type: string, minLength: 20, maxLength: 128}
+        device_name: {type: string, minLength: 1, maxLength: 100}
+        role:
+          type: string
+          enum: [gateway, client]
+          description: >-
+            The pairing device's kind. Required for a join code, which pairs one
+            gateway and one client. A pairing code fixes its role; a different
+            role here is rejected without using the code.
+        platform:
+          type: string
+          pattern: '^\s*(?:[a-z][a-z0-9_-]{0,31})?\s*$'
+          description: >-
+            Optional open platform label. The server trims surrounding whitespace;
+            an omitted or whitespace-only value becomes unknown. After trimming,
+            a non-empty value must match ^[a-z][a-z0-9_-]{0,31}$. Labels such as
+            android, windows, and magiskvm are descriptive only and do not assert
+            client UI, SIP media, or OS integration support.
+    ClientList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/ClientSummary'}
+    ClientSummary:
+      type: object
+      additionalProperties: false
+      required: [id, name, platform, state, is_self]
+      properties:
+        id: {$ref: '#/components/schemas/UUID'}
+        name: {type: string, minLength: 1, maxLength: 100}
+        platform:
+          type: string
+          pattern: '^[a-z][a-z0-9_-]{0,31}$'
+          description: Normalized descriptive label; unknown when no label was supplied.
+        state: {type: string, enum: [active, revoked]}
+        is_self: {type: boolean}
+        live: {type: boolean, description: The device still holds a session that can sign in; a revoked pairing keeps state active but is not live.}
+        last_active_at: {type: string, format: date-time, description: When the device last signed in or refreshed its session.}
+    PairingResult:
+      allOf:
+        - {$ref: '#/components/schemas/SessionTokens'}
+        - type: object
+          required: [owner_id, device_id, role]
+          properties:
+            owner_id: {$ref: '#/components/schemas/UUID'}
+            device_id: {$ref: '#/components/schemas/UUID'}
+            role: {type: string, enum: [gateway, client]}
+    SessionTokens:
+      type: object
+      required: [access_token, access_expires_at, refresh_token, refresh_expires_at]
+      properties:
+        access_token: {type: string}
+        access_expires_at: {$ref: '#/components/schemas/Timestamp'}
+        refresh_token: {type: string}
+        refresh_expires_at: {$ref: '#/components/schemas/Timestamp'}
+    RefreshRequest:
+      type: object
+      additionalProperties: false
+      required: [refresh_token]
+      properties:
+        refresh_token: {type: string}
+    ClientEventReceipt:
+      type: object
+      additionalProperties: false
+      required: [durable_cursor, confirmed_at, events_retained]
+      properties:
+        durable_cursor: {type: string}
+        confirmed_at: {type: string, format: date-time}
+        events_retained: {type: boolean, const: true}
+    RemoteCall:
+      description: >-
+        A client-scoped call projection. For incoming calls client_id is the
+        authenticated requesting device, and state/state_revision/reason describe
+        only its participant. Each participant has an independent nonce and
+        monotonic revision for the shared call_id. A losing participant ends with
+        reason answered_elsewhere after the gateway commits another client as the
+        winner; local UI state does not select a winner. Calls left unfinished by
+        a SIP release end with reason sip_removed.
+      type: object
+      required: [call_id, gateway_id, client_id, sim_id, mapping_revision, direction, state, state_revision, to, created_at]
+      properties:
+        call_id: {type: string, format: uuid}
+        gateway_id: {type: string, format: uuid}
+        client_id: {type: string, format: uuid}
+        sim_id: {type: string, format: uuid}
+        mapping_revision: {type: integer, minimum: 1}
+        direction: {type: string, enum: [incoming, outgoing]}
+        state: {type: string, enum: [reserved, pending_wakeup, ringing, dialing, connecting, active, ended, unknown]}
+        state_revision: {type: integer, minimum: 1, description: Monotonic revision for this client's participant view.}
+        from: {type: string}
+        to: {type: string}
+        reason:
+          type: string
+          description: >-
+            Terminal or failure reason. Incoming non-winners use answered_elsewhere;
+            rejecting one participant does not end the other participants.
+        created_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+        answered_at: {type: string, format: date-time}
+        ended_at: {type: string, format: date-time}
+    CallPage:
+      type: object
+      required: [items, next_cursor, resync_required]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/RemoteCall'}
+        next_cursor: {type: [string, 'null']}
+        resync_required: {type: boolean}
+    HeartbeatRequest:
+      type: object
+      required: [sequence, protocol_version, app_version, root, sim_states]
+      properties:
+        sequence: {type: integer, minimum: 1}
+        protocol_version: {type: integer, const: 1}
+        app_version: {type: string, maxLength: 64}
+        root: {type: boolean}
+        sip_registered: {type: boolean, deprecated: true, description: Sent by gateways before 0.4; accepted and ignored.}
+        battery_percent: {type: [integer, 'null'], minimum: 0, maximum: 100}
+        charging: {type: [boolean, 'null']}
+        install_id:
+          description: Gateway install ID; send only after a heartbeat response lists `mesh`.
+          allOf: [{$ref: '#/components/schemas/UUID'}]
+        sim_states:
+          type: array
+          maxItems: 2
+          items:
+            type: object
+            required: [sim_id, mapping_revision, service_state, identity_verified]
+            properties:
+              sim_id: {$ref: '#/components/schemas/UUID'}
+              mapping_revision: {type: integer, minimum: 1}
+              service_state: {type: string, maxLength: 32}
+              identity_verified: {type: boolean}
+              radio:
+                description: >-
+                  Optional display telemetry. Send only after a heartbeat
+                  response lists `sim_radio` in `extensions`; it never
+                  activates, verifies or routes a SIM.
+                allOf: [{$ref: '#/components/schemas/SimRadio'}]
+    SimRadio:
+      type: object
+      additionalProperties: false
+      properties:
+        signal_level: {type: [integer, 'null'], minimum: 0, maximum: 4}
+        network_type: {type: [string, 'null'], pattern: '^[A-Za-z0-9_+ -]{1,16}$'}
+        network_operator: {type: [string, 'null'], minLength: 1, maxLength: 64}
+        roaming: {type: [boolean, 'null']}
+        country_iso:
+          description: >-
+            SIM home country, ISO 3166-1 alpha-2 in upper case. Send only
+            after a heartbeat response lists `sim_country` in `extensions`.
+          type: [string, 'null']
+          pattern: '^[A-Z]{2}$'
+    SimRadioObservation:
+      type: object
+      additionalProperties: false
+      required: [signal_level, network_type, network_operator, roaming, country_iso, updated_at]
+      properties:
+        signal_level: {type: [integer, 'null'], minimum: 0, maximum: 4}
+        network_type: {type: [string, 'null']}
+        network_operator: {type: [string, 'null']}
+        roaming: {type: [boolean, 'null']}
+        country_iso: {type: [string, 'null'], pattern: '^[A-Z]{2}$'}
+        updated_at: {$ref: '#/components/schemas/Timestamp'}
+    HeartbeatResult:
+      type: object
+      required: [server_time, online, stale_after_seconds, mapping_revision, invalidated_sim_ids]
+      properties:
+        server_time: {$ref: '#/components/schemas/Timestamp'}
+        online: {type: boolean, const: true}
+        stale_after_seconds: {type: integer, const: 90}
+        mapping_revision: {type: integer, minimum: 0}
+        invalidated_sim_ids:
+          type: array
+          maxItems: 2
+          items: {$ref: '#/components/schemas/UUID'}
+        extensions:
+          description: Optional heartbeat fields this server accepts, such as `sim_radio` and `sim_country`.
+          type: array
+          items: {type: string}
+    SimProposalRequest:
+      type: object
+      required: [operation_id, phase, mappings]
+      properties:
+        operation_id: {$ref: '#/components/schemas/UUID'}
+        phase: {type: string, const: propose}
+        mappings:
+          type: array
+          minItems: 1
+          maxItems: 2
+          items:
+            type: object
+            required: [slot_index, label]
+            properties:
+              slot_index: {type: integer, minimum: 0, maximum: 1}
+              label: {type: string, maxLength: 64}
+              carrier_name: {type: [string, 'null'], maxLength: 100}
+              phone_number: {type: [string, 'null'], maxLength: 64}
+              existing_sim_id: {type: string, format: uuid}
+              same_sim_verified: {type: boolean}
+              proposed_sim_id:
+                description: Gateway-minted SIM ID kept on every node (`mesh` extension); cannot be combined with existing_sim_id.
+                type: string
+                format: uuid
+    SimConfirmationRequest:
+      type: object
+      required: [operation_id, phase, confirmations]
+      properties:
+        operation_id: {$ref: '#/components/schemas/UUID'}
+        phase: {type: string, const: confirm}
+        confirmations:
+          type: array
+          minItems: 1
+          maxItems: 2
+          items:
+            type: object
+            required: [sim_id, slot_index, confirmed]
+            properties:
+              sim_id: {$ref: '#/components/schemas/UUID'}
+              slot_index: {type: integer, minimum: 0, maximum: 1}
+              confirmed: {type: boolean}
+    SimBindingResult:
+      type: object
+      required: [operation_id, phase, mapping_revision, mappings]
+      properties:
+        operation_id: {$ref: '#/components/schemas/UUID'}
+        phase: {type: string, enum: [proposed, confirmed]}
+        mapping_revision: {type: integer}
+        mappings:
+          type: array
+          items:
+            type: object
+            required: [sim_id, slot_index, state, mapping_revision]
+            properties:
+              sim_id: {$ref: '#/components/schemas/UUID'}
+              slot_index: {type: integer}
+              state: {type: string, enum: [pending_local_confirmation, active, unverified]}
+              mapping_revision: {type: integer}
+    Capabilities:
+      type: object
+      additionalProperties: false
+      required: [protocol_version, extensions]
+      properties:
+        protocol_version: {type: integer, const: 1}
+        rtc_call_control: {type: boolean, description: RTC call control is available.}
+        rtc_audio: {type: boolean}
+        push: {type: boolean, description: This node posts wake-ups to registered push endpoints.}
+        rtc_sleep: {type: boolean, description: Clients may send sleep_seconds with their call-control capability.}
+        global_decline_v1:
+          type: boolean
+          description: Gateways may declare global_decline; clients then see global_decline on incoming calls and may send decline_all.
+        ice_servers_v1:
+          type: boolean
+          description: Supports authenticated call-independent GET /rtc/ice-servers.
+        incoming_ring_until_end:
+          type: boolean
+          description: Gateways may send remaining_ring_ms up to 300000 and end the call when the cellular call ends, so hosts ring until the caller or the network gives up.
+        reception_v2:
+          type: boolean
+          description: >-
+            Clients may write /devices/self/reception, gateways may send
+            remaining_ring_ms, and a v2 client gets wire 2 push wake-ups and
+            WebSocket domains.
+        extensions:
+          type: array
+          items: {type: string}
+    CreateMessage:
+      type: object
+      additionalProperties: false
+      required: [gateway_id, sim_id, mapping_revision, to, text]
+      properties:
+        message_id:
+          description: >-
+            Client-minted message ID (send only when /capabilities lists
+            `mesh`). The same ID used through another node identifies the same
+            task, so the gateway executes it at most once.
+          allOf: [{$ref: '#/components/schemas/UUID'}]
+        gateway_id: {$ref: '#/components/schemas/UUID'}
+        sim_id: {$ref: '#/components/schemas/UUID'}
+        mapping_revision: {type: integer, minimum: 1}
+        to: {type: string, minLength: 1, maxLength: 64}
+        text: {type: string, minLength: 1, maxLength: 16384}
+        ttl_seconds: {type: integer, minimum: 1, maximum: 3600, default: 300}
+    MessageAccepted:
+      type: object
+      required: [message_id, command_id, status, created_at, expires_at]
+      properties:
+        message_id: {$ref: '#/components/schemas/UUID'}
+        command_id: {$ref: '#/components/schemas/UUID'}
+        status: {type: string, const: queued}
+        created_at: {$ref: '#/components/schemas/Timestamp'}
+        expires_at: {$ref: '#/components/schemas/Timestamp'}
+    MessageDetail:
+      type: object
+      required: [message_id, command_id, gateway_id, sim_id, mapping_revision, direction, from, to, text, status, part_count, created_at, expires_at, parts]
+      properties:
+        message_id: {$ref: '#/components/schemas/UUID'}
+        gateway_id: {$ref: '#/components/schemas/UUID'}
+        command_id: {anyOf: [{$ref: '#/components/schemas/UUID'}, {type: 'null'}]}
+        sim_id: {anyOf: [{$ref: '#/components/schemas/UUID'}, {type: 'null'}]}
+        mapping_revision: {type: [integer, 'null']}
+        direction: {type: string, enum: [inbound, outbound]}
+        from: {type: [string, 'null']}
+        to: {type: [string, 'null']}
+        text: {type: string}
+        status: {type: string}
+        part_count: {type: [integer, 'null'], minimum: 1}
+        created_at: {$ref: '#/components/schemas/Timestamp'}
+        expires_at: {anyOf: [{$ref: '#/components/schemas/Timestamp'}, {type: 'null'}]}
+        parts:
+          type: array
+          items:
+            type: object
+            required: [part_index, state]
+            properties:
+              part_index: {type: integer, minimum: 0}
+              state: {type: string}
+              result_code: {type: [integer, 'null']}
+              error: {type: [string, 'null']}
+    MessagePage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/MessageDetail'}}
+        next_cursor: {type: [string, 'null']}
+    Command:
+      type: object
+      required: [command_id, message_id, gateway_id, sim_id, mapping_revision, to, text, expires_at, payload_sha256, state]
+      properties:
+        command_id: {$ref: '#/components/schemas/UUID'}
+        message_id: {$ref: '#/components/schemas/UUID'}
+        gateway_id: {$ref: '#/components/schemas/UUID'}
+        sim_id: {$ref: '#/components/schemas/UUID'}
+        mapping_revision: {type: integer}
+        to: {type: string}
+        text: {type: string}
+        expires_at: {$ref: '#/components/schemas/Timestamp'}
+        payload_sha256:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+          description: SHA-256 of command_id, message_id, gateway_id, sim_id, decimal mapping_revision, to, text, and UTC RFC3339Nano expires_at joined by NUL bytes.
+        state: {type: string, enum: [queued, accepted_by_gateway, dispatching]}
+    GatewayEvent:
+      type: object
+      additionalProperties: false
+      required: [protocol_version, event_id, gateway_id, sequence, occurred_at, type, payload]
+      properties:
+        protocol_version: {type: integer, const: 1}
+        event_id: {$ref: '#/components/schemas/UUID'}
+        gateway_id: {$ref: '#/components/schemas/UUID'}
+        sequence: {type: integer, minimum: 1}
+        occurred_at: {$ref: '#/components/schemas/Timestamp'}
+        type: {type: string, enum: [sms.received, sms.dispatching, sms.command_state, sms.part_state]}
+        sim_id: {anyOf: [{$ref: '#/components/schemas/UUID'}, {type: 'null'}]}
+        mapping_revision: {type: [integer, 'null'], minimum: 1}
+        sim_resolution: {type: string, enum: [unknown]}
+        payload:
+          oneOf:
+            - {$ref: '#/components/schemas/SMSReceivedPayload'}
+            - {$ref: '#/components/schemas/SMSDispatchingPayload'}
+            - {$ref: '#/components/schemas/SMSCommandStatePayload'}
+            - {$ref: '#/components/schemas/SMSPartStatePayload'}
+      allOf:
+        - if:
+            properties: {type: {const: sms.received}}
+          then:
+            allOf:
+              - properties: {payload: {$ref: '#/components/schemas/SMSReceivedPayload'}}
+              - oneOf:
+                  - required: [sim_id, mapping_revision, sim_resolution]
+                    properties:
+                      sim_id: {type: 'null'}
+                      mapping_revision: {type: 'null'}
+                      sim_resolution: {type: string, const: unknown}
+                  - required: [sim_id, mapping_revision]
+                    properties:
+                      sim_id: {$ref: '#/components/schemas/UUID'}
+                      mapping_revision: {type: integer, minimum: 1}
+                    not: {required: [sim_resolution]}
+        - if:
+            properties: {type: {const: sms.dispatching}}
+          then:
+            required: [sim_id, mapping_revision]
+            properties:
+              sim_id: {$ref: '#/components/schemas/UUID'}
+              mapping_revision: {type: integer, minimum: 1}
+              payload: {$ref: '#/components/schemas/SMSDispatchingPayload'}
+            not: {required: [sim_resolution]}
+        - if:
+            properties: {type: {const: sms.command_state}}
+          then:
+            required: [sim_id, mapping_revision]
+            properties:
+              sim_id: {$ref: '#/components/schemas/UUID'}
+              mapping_revision: {type: integer, minimum: 1}
+              payload: {$ref: '#/components/schemas/SMSCommandStatePayload'}
+            not: {required: [sim_resolution]}
+        - if:
+            properties: {type: {const: sms.part_state}}
+          then:
+            required: [sim_id, mapping_revision]
+            properties:
+              sim_id: {$ref: '#/components/schemas/UUID'}
+              mapping_revision: {type: integer, minimum: 1}
+              payload: {$ref: '#/components/schemas/SMSPartStatePayload'}
+            not: {required: [sim_resolution]}
+    SMSReceivedPayload:
+      type: object
+      additionalProperties: false
+      required: [message_id, from, text, parts]
+      properties:
+        message_id: {$ref: '#/components/schemas/UUID'}
+        from: {type: string, minLength: 1, maxLength: 256}
+        text: {type: string, maxLength: 16384}
+        parts: {type: integer, minimum: 1, maximum: 255}
+    SMSDispatchingPayload:
+      type: object
+      additionalProperties: false
+      required: [message_id, command_id, part_count]
+      properties:
+        message_id: {$ref: '#/components/schemas/UUID'}
+        command_id: {$ref: '#/components/schemas/UUID'}
+        part_count: {type: integer, minimum: 1, maximum: 255}
+    SMSCommandStatePayload:
+      type: object
+      additionalProperties: false
+      required: [message_id, command_id, state]
+      properties:
+        message_id: {$ref: '#/components/schemas/UUID'}
+        command_id: {$ref: '#/components/schemas/UUID'}
+        state: {type: string, enum: [expired, failed, unknown]}
+        error: {type: string, maxLength: 512}
+    SMSPartStatePayload:
+      type: object
+      additionalProperties: false
+      required: [message_id, command_id, part_index, state]
+      properties:
+        message_id: {$ref: '#/components/schemas/UUID'}
+        command_id: {$ref: '#/components/schemas/UUID'}
+        part_index: {type: integer, minimum: 0, maximum: 254}
+        state: {type: string, enum: [submitted, delivered, failed, expired, unknown]}
+        result_code: {type: integer}
+        error: {type: string, maxLength: 512}
+    EventPage:
+      type: object
+      required: [items, next_cursor, resync_required]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [cursor, event_id, type, occurred_at, message]
+            properties:
+              cursor: {type: string}
+              event_id: {$ref: '#/components/schemas/UUID'}
+              type: {type: string, enum: [message.created, message.received, message.state_changed]}
+              occurred_at: {$ref: '#/components/schemas/Timestamp'}
+              message: {$ref: '#/components/schemas/MessageDetail'}
+        next_cursor: {type: [string, 'null']}
+        resync_required: {type: boolean}
+    GatewayList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [gateway_id, device_name, online, last_seen_at, mapping_revision, sequence, protocol_version, app_version, root, battery_percent, charging]
+            properties:
+              gateway_id: {$ref: '#/components/schemas/UUID'}
+              device_name: {type: string}
+              online: {type: boolean}
+              last_seen_at: {anyOf: [{$ref: '#/components/schemas/Timestamp'}, {type: 'null'}]}
+              mapping_revision: {type: integer}
+              sequence: {type: [integer, 'null']}
+              protocol_version: {type: [integer, 'null']}
+              app_version: {type: [string, 'null']}
+              root: {type: [boolean, 'null']}
+              rtc_call_control_ready: {type: boolean, description: Fresh authenticated RTC call control capability.}
+              battery_percent: {type: [integer, 'null']}
+              charging: {type: [boolean, 'null']}
+              install_id:
+                description: Physical gateway install reported with the `mesh` extension; equal across nodes paired to the same old phone.
+                anyOf: [{$ref: '#/components/schemas/UUID'}, {type: 'null'}]
+    SimList:
+      type: object
+      required: [mapping_revision, sims]
+      properties:
+        mapping_revision: {type: integer}
+        sims:
+          type: array
+          items:
+            type: object
+            required: [sim_id, slot_index, label, carrier_name, phone_number, state, mapping_revision, identity_verified, service_state]
+            properties:
+              sim_id: {$ref: '#/components/schemas/UUID'}
+              slot_index: {type: integer}
+              label: {type: string}
+              carrier_name: {type: [string, 'null']}
+              phone_number: {type: [string, 'null']}
+              state: {type: string, enum: [pending_local_confirmation, active, unverified, removed]}
+              mapping_revision: {type: integer}
+              identity_verified: {type: boolean}
+              service_state: {type: [string, 'null']}
+              radio:
+                description: Latest gateway radio observation, or null before one is reported or after the SIM disappears.
+                oneOf:
+                  - type: 'null'
+                  - {$ref: '#/components/schemas/SimRadioObservation'}
+    ErrorResponse:
+      type: object
+      required: [error, request_id]
+      properties:
+        error:
+          type: object
+          required: [code, message, retryable]
+          properties:
+            code: {type: string}
+            message: {type: string}
+            retryable: {type: boolean}
+        request_id: {$ref: '#/components/schemas/UUID'}
