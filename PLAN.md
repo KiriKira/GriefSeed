@@ -10,8 +10,8 @@
 - 已有 SoulGem 的人：把它当冷备节点；也可以只用它的 TURN，作为独立中继来源配给手机。
 
 三端整体目标、已核实的 Cloudflare 额度和 TURN 来源协议，见 SoulGem 的
-[TURN 与节点解耦计划](https://github.com/KiriKira/SoulGem/blob/200e52273bba9b914c49695932ff6f27445ecbee/docs/plan-turn-sources.md)。
-该链接暂时固定到本轮审阅版本，避免主线尚未合并时出现死链。合并前检查：先合入 [SoulGem #35](https://github.com/KiriKira/SoulGem/pull/35)，确认 main 已包含该文件，再将链接改回 main 后合入本计划。本文对应整体计划里的 T5 和 T6。
+[TURN 与节点解耦计划](https://github.com/KiriKira/SoulGem/blob/main/docs/plan-turn-sources.md)。
+[SoulGem #35](https://github.com/KiriKira/SoulGem/pull/35) 已合入，来源协议链接跟随 main。本文对应整体计划里的 T5 和 T6。
 
 ## 平台选择：只做 Cloudflare
 
