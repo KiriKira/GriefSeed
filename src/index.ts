@@ -102,6 +102,10 @@ export default {
         path.startsWith("/v1/") &&
         path !== "/v1/rtc/ice-servers"
       ) {
+        // Reject unknown paths before touching the deployment object.
+        const routes =
+          /^\/v1\/(?:pairings\/claim|auth\/(?:refresh|revoke)|clients|gateways(?:\/[A-Za-z0-9_-]+\/(?:sims|heartbeat|sim-bindings|events:batch|commands(?:\/[A-Za-z0-9_-]+\/claim)?))?|messages(?:\/[A-Za-z0-9_-]+)?|events(?:\/ack)?|devices\/self\/(?:rtc-capability|reception|push-endpoint(?:\/test)?)|rtc\/(?:control\/(?:ws|capability|incoming(?:-policy)?|calls(?:\/[A-Za-z0-9_-]+(?:\/operations)?)?)|legs\/[A-Za-z0-9_-]+)|calls(?:\/[A-Za-z0-9_-]+(?:\/media(?:\/active)?)?)?|ws)$/;
+        if (!routes.test(path)) return error("NOT_FOUND", 404);
         const publicRoute =
           path === "/v1/pairings/claim" || path === "/v1/auth/refresh";
         const authorization = request.headers.get("Authorization") || "";

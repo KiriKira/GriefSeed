@@ -447,6 +447,22 @@ test("ordinary exhaustion preserves termination budget; fake ended fields cannot
 test("strict wire parsing rejects duplicate/escaped duplicate keys, unsafe integers and invalid Unicode", async () => {
   const f = await fixture();
   try {
+    const before = await (
+      await f.mf.dispatchFetch("https://local/admin/devices", {
+        headers: f.admin,
+      })
+    ).json();
+    assert.equal(
+      (await f.send("/not-a-node-route", "GET", undefined, f.host.access_token))
+        .status,
+      404,
+    );
+    const after = await (
+      await f.mf.dispatchFetch("https://local/admin/devices", {
+        headers: f.admin,
+      })
+    ).json();
+    assert.deepEqual(after.budget, before.budget);
     for (const text of [
       '{"version":1,"version":1,"enabled":true}',
       '{"version":1,"\\u0076ersion":1,"enabled":true}',
