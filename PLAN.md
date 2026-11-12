@@ -10,7 +10,7 @@
 - 已有 SoulGem 的人：把它当冷备节点；也可以只用它的 TURN，作为独立中继来源配给手机。
 
 三端整体目标、已核实的 Cloudflare 额度和 TURN 来源协议，见 SoulGem 的
-[TURN 与节点解耦计划](https://github.com/KiriKira/SoulGem/blob/86187ca13c1030b59a8c1e50994e737acf476aba/docs/plan-turn-sources.md)。
+[TURN 与节点解耦计划](https://github.com/KiriKira/SoulGem/blob/200e52273bba9b914c49695932ff6f27445ecbee/docs/plan-turn-sources.md)。
 该链接暂时固定到本轮审阅版本，避免主线尚未合并时出现死链。合并前检查：先合入 [SoulGem #35](https://github.com/KiriKira/SoulGem/pull/35)，确认 main 已包含该文件，再将链接改回 main 后合入本计划。本文对应整体计划里的 T5 和 T6。
 
 ## 平台选择：只做 Cloudflare
@@ -39,12 +39,22 @@ Authorization: Bearer <来源 token>
 
 - Cloudflare TURN key ID 和 API token 作为 Worker secret 保存，**永远不下发给手机**。
 - 调用 `generate-ice-servers` 申请凭据；仅在 Cloudflare 适配器中过滤端口 53，每类传输方式保留一个地址（UDP 3478、TCP 3478、TLS 443）。这不是手机通用来源的端口白名单，自建 TURN 的自定义端口仍需保留。
-- 来源 token 由部署者发放和吊销，可以发给多个人；每个 token 有名字，token 只存哈希。
+- **T5 首次交付即使用带签名的来源 token**，不先发布无签名格式。来源 token 由部署者发放和吊销，可以发给多个人；
+  每个 token 有名字，服务端只保存完整 token 的哈希及管理元数据，原文仅在发放时显示一次。
+- **格式与签名**：采用版本化格式 `v1.<kid>.<token_id>.<mac>`，`token_id` 为安全随机生成的 32 字节，
+  `mac` 为完整 HMAC-SHA-256；二进制字段使用无填充 base64url。`kid` 只索引本地已配置密钥，禁止动态获取密钥或由 token 指定算法。
+  签名输入包含固定用途标识、稳定的部署 ID，以及版本、kid 和 token_id；编码与分隔规则在 T5 协议中冻结并提供固定测试向量。
+  Worker 先检查长度、字段数量、版本、编码和 kid，再使用 Web Crypto 验证 MAC；不接受无签名降级或非规范编码。
+  手机将来源 token 视为不透明 Bearer 字符串，不解析签名，不持有签名密钥；这不改变 SoulGem 的会话 token 格式。
+- **签名密钥生命周期**：每部署使用独立随机密钥（至少 32 字节），作为 Worker secret 保存，不复用管理密码、Cloudflare API token 或 TURN 密钥。
+  初次部署配置密钥和稳定部署 ID，升级不得重新生成；缺失配置时拒绝签发与验证。密钥环按 kid 管理，当前密钥签发新 token，
+  正常轮换期间保留旧验证密钥，待其 token 全部换发或吊销后退役；泄漏时可紧急移除对应 kid，并明确该批 token 会失效、需要换发。
+  密钥、部署 ID 与 DO 数据的备份恢复要配套，不能仅恢复 token 哈希却丢失验证能力。
 - **T5 起使用 SQLite Durable Object 持久化管理状态**：声明一个部署级 DO（例如 `idFromName("deployment")`），
-  保存 token ID、哈希、名称、创建/吊销时间、签发记录、统计和限速状态。Worker secret 仅保存管理密码和上游凭据。
+  保存 token ID、哈希、名称、创建/吊销时间、签发记录、统计和限速状态。Worker secret 保存管理密码、上游凭据和来源 token 签名密钥环。
   Wrangler 从首次部署就声明 SQLite DO binding 与 migration tag，DO 内使用有版本的 schema 迁移。
   发放、吊销及限流状态需原子更新；DO 是 token 有效性与吊销状态的权威来源，不能用 Worker 内存或过期缓存替代。
-  存储不可用时拒绝新签发。每次来源鉴权需访问 DO，计入请求预算；本阶段不引入 D1。
+  存储不可用时拒绝新签发。每次通过签名预检的来源鉴权仍需访问 DO，计入请求预算；本阶段不引入 D1。
 - **主动撤销是 T5 必做项**：[官方接口](https://developers.cloudflare.com/realtime/turn/generate-credentials/)为
   `POST https://rtc.live.cloudflare.com/v1/turn/keys/{key_id}/credentials/{username}/revoke`，成功返回 204。
   每次签发保存来源 token ID、TURN key ID、username、到期时间及撤销状态，按签发限速约束记录数量；到期后按保留策略清理。
@@ -111,9 +121,10 @@ Authorization: Bearer <来源 token>
 
 ## 额度与滥用防护
 
-- **Worker 只能提前过滤部分无效请求**：先检查请求大小、路径、Authorization 格式等，再访问 DO 核验 token 哈希、有效性和吊销状态。
-  格式正确的伪造 token 仍可能消耗 DO 请求。若以后采用带签名 token，Worker 可提前拒绝签名无效的 token，
-  但签名有效不代表未吊销，最终仍须查 DO；不能承诺所有垃圾请求都不消耗 DO 额度。
+- **T5 在 Worker 验签后才访问 DO**：格式错误、未知版本/kid、被篡改或 MAC 无效的 token 在 Worker 层拒绝，不调用 DO，
+  也不为这些失败写 DO 审计或限流计数，避免通过副作用重新消耗 DO 额度。使用不含 token 原文的 Worker 日志/指标观察这些拒绝。
+  签名通过后，仍由 DO 核验完整 token 哈希、已登记状态和吊销状态；签名不授予绕过 DO 的权限。
+  被窃取、重放或已吊销的真实签名 token 仍可能消耗 DO 请求，因此只能承诺部分无效请求进不了 DO，不能承诺所有垃圾流量都被提前挡住。
 - 命中 Worker 的请求即使被鉴权或限流拒绝也会消耗 Workers 请求额度；Worker 内限速不能防止该额度被刷尽。
   推荐自定义域名配合当前套餐可用的 WAF 限流，关闭不需要的 `workers.dev` 及其他绕过 WAF 的入口，并验收实际入口覆盖。
   对有 fail-open/fail-closed 选项的路由使用 fail closed，不能在超额时绕过鉴权；这些措施降低风险，不保证免费额度不会耗尽。
@@ -121,7 +132,9 @@ Authorization: Bearer <来源 token>
   为已认证的挂断、蜂窝结束确认、状态收敛保留受限预算，避免普通限额阻止通话结束；不能借此形成无限免费通道。
   [平台总额度](https://developers.cloudflare.com/workers/platform/limits/)耗尽后的 1027 不受应用预留控制，客户端须退避，
   按已有失联规则处理，不能承诺仍可访问 Worker；免费日额度在 UTC 零点重置。
-- 验收格式错误、格式正确但无效、已吊销 token、失控设备和重连风暴，分别统计 Workers 与 DO 请求；
+- 验收格式错误、篡改字段、未知版本/kid、错误密钥/部署、非规范编码及无签名 token：均应在 Worker 拒绝且 DO 调用数为零。
+  正确签名但未登记、已吊销或被重放的 token 走 DO 核验与限流；同时覆盖正常签发、升级保持有效、密钥轮换和紧急退役。
+  对失控设备和重连风暴分别统计 Workers 与 DO 请求；
   确认客户端遵守 `Retry-After`，遇 1027 不紧密重试，预算耗尽不会导致未知短信自动重发或猜测蜂窝已结束。
 
 ## 一键部署与升级
@@ -129,7 +142,7 @@ Authorization: Bearer <来源 token>
 - README 放 “Deploy to Cloudflare” 按钮。仓库必须公开，正式让别人部署前改为公开。
 - 需要用户填写的 secret 在 `.dev.vars.example` 里声明，并在 `package.json` 的 `cloudflare.bindings` 里写明从哪里获取。
 - 按钮创建的是**复制出来的仓库，不是 fork**，不会自动跟随上游更新。要写清楚升级方法，或者提供一个同步上游的 GitHub Action。
-- 升级文档包括 DO 的版本化 SQLite schema 迁移、备份与恢复、失败回退；T5 → T6 保留部署级 DO 身份、来源 token、未完成撤销任务和节点身份。
+- 升级文档包括 DO 的版本化 SQLite schema 迁移、备份与恢复、失败回退；T5 → T6 保留部署级 DO 身份、来源 token、签名验证配置、未完成撤销任务和节点身份。
 - 中国大陆：`workers.dev` 有被 SNI 阻断的报告，README 要说明绑定自定义域名，并且不保证大陆可达。
 
 ## 不做的事
@@ -138,10 +151,10 @@ Authorization: Bearer <来源 token>
 - 不和 Kyubey 合并：Kyubey 里放的是 App 的 Firebase 推送凭据，只能由维护者运营；GriefSeed 由每个用户部署到自己的账号。
 - 不替代 SoulGem：有服务器的人仍然推荐自建 SoulGem。
 
-## 已决定（2026-11-11）
+## 已决定（2026-11-12）
 
 - Cloudflare API token 只保存在 Worker 里，不放在手机上。
-- 来源 token 用 Worker 自带的管理页管理。
+- 来源 token 用 Worker 自带的管理页管理，T5 首次交付即采用版本化签名格式；验签后仍由 DO 核验登记与吊销状态。
 - 节点阶段先只支持一个 owner。
 - 手机加节点时自动带上它的 TURN，也可以扫码单独配对中继来源。
 
