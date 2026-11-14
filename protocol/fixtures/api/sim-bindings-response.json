@@ -1,0 +1,13 @@
+{
+  "operation_id": "e4000000-0000-4000-8000-000000000001",
+  "phase": "proposed",
+  "mapping_revision": 4,
+  "mappings": [
+    {
+      "sim_id": "e3000000-0000-4000-8000-000000000002",
+      "slot_index": 1,
+      "state": "pending_local_confirmation",
+      "mapping_revision": 4
+    }
+  ]
+}
