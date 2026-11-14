@@ -212,7 +212,7 @@ test("actual SQLite DO issuance survives restart; revocation persists, fails clo
     mf = runtime(dir, upstream);
     const headers = await login(mf);
     const token = await create(mf, headers);
-    assert.match(token.link, /^gsm2sip:\/\/relay\?/);
+    assert.match(token.link, /^mahogsm:\/\/relay\?/);
     assert.match(token.qr, /<svg/);
     let r = await mf.dispatchFetch("https://local/v1/rtc/ice-servers", {
       headers: { Authorization: "Bearer " + token.token },

@@ -244,7 +244,7 @@ export default {
         const result = await forward(env, "/tokens", "POST", body);
         if (!result.ok) return result;
         const data = (await result.json()) as { token: string; id: string };
-        const link = `gsm2sip://relay?url=${encodeURIComponent(url.origin)}&token=${encodeURIComponent(data.token)}`;
+        const link = `mahogsm://relay?url=${encodeURIComponent(url.origin)}&token=${encodeURIComponent(data.token)}`;
         return json(
           {
             ...data,

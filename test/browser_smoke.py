@@ -33,7 +33,7 @@ try:
         name = '<img src=x onerror="alert(1)">'
         page.locator("#name").fill(name)
         page.locator("#create button").click()
-        expect(page.locator("#link")).to_contain_text("gsm2sip://relay?")
+        expect(page.locator("#link")).to_contain_text("mahogsm://relay?")
         expect(page.locator("#qr img")).to_be_visible()
         expect(page.locator("#tokens")).to_contain_text(name)
         page.locator("#tokens button").click()

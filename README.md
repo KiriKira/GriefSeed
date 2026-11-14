@@ -14,7 +14,7 @@ Cloudflare Workers + SQLite Durable Objects 版 SoulGem：同一个部署提供�
    前三项使用生成值，后两项来自 Realtime TURN。Cloudflare API 凭据始终保留在 Worker，不进入手机。
 3. Wrangler 创建固定名称 `deployment` 的 SQLite DO；无需 D1。`NODE_ENABLED=true` 默认开启节点，设为 false 可仅提供 TURN 来源。
 4. 登录部署地址的管理页：生成一个加入码，让 Homura、Madoka 各扫码一次；同一码每个角色只能兑换一次，15 分钟有效。
-   现有节点的用户也可发放独立来源 token，在手机“中继来源”设置里导入 `gsm2sip://relay` 链接。
+   现有节点的用户也可发放独立来源 token，在手机“中继来源”设置里导入 `mahogsm://relay` 链接。
 5. 选用推送时，将 `PUSH_ALLOWED_HOSTS` 设为手机所用 Kyubey 服务的精确 HTTPS 主机名，逗号分隔。
    默认不发推送；控制 WebSocket 与周期恢复仍可工作。没有声明推送能力时，手机不会误判已覆盖推送。
 
