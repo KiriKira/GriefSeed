@@ -600,6 +600,9 @@ export class Deployment extends DurableObject<Env> {
             clients.add(device);
           }
         }
+      } else if (job.kind === "gateway") {
+        // A test-call request: wake its gateway only; no host push.
+        devices.add(String(payload.gateway));
       } else
         for (const row of this.sql
           .exec<{

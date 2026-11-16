@@ -1,8 +1,8 @@
 {
   "repository": "KiriKira/SoulGem",
-  "commit": "d293e57ce5ed61c806ec55d2344f944b1e7e86e5",
+  "commit": "65bf0e436e1e6ed518ccbfb0cdc8f2923b96e717",
   "files": {
-    "openapi.yaml": "b0b7e9c36f862a5ad4f8d04111b8d3641705fa7e681b916892ac46bccf019b82",
+    "openapi.yaml": "e665f1704602df27ce1b9f1d76db075e4f0cd410c92a0a6415c859f047a00d7b",
     "fixtures/api/call-answered-elsewhere.json": "54c466b30acea7edcefda0e22d2ea26a1815f529933e4446d0c3602309e039cf",
     "fixtures/api/call-ringing-response.json": "00fbaa369a7ea9db1b30798b17da1a80da9624226a8191804c2b50cd0c1f2f6d",
     "fixtures/api/capabilities-response.json": "d3c7b249edd32748890d246eeedf96a90e76f0bc02a52fd11c722cdf3d1ca5ac",
@@ -22,6 +22,7 @@
     "fixtures/api/reception-config.json": "4a5a1e91808a6bfbb7f8345aafa64f4e4590e355cde59f25840ebdf22c285eb8",
     "fixtures/api/reception-update.json": "712ee60a64bf37060593412ddc9dc9d6900ff1e7ab564da7711ad05dc311e7c6",
     "fixtures/api/rtc-control-incoming-remaining.json": "af5b3c870a368e7d681a00dd6116986d21f566119f7d9e3812229c4731825936",
+    "fixtures/api/rtc-control-incoming-test.json": "2c1356608d3bcb74076acce3024d5af0cbd6d84a94f55afcde97d92d5d4ae903",
     "fixtures/api/rtc-control-incoming.json": "558e74223fd27411c66f904401964afbe388306015f78abe0d3ceb4a09f663bf",
     "fixtures/api/rtc-control-operation.json": "61e40fcda8d11ea47c2d1509e1459171731a08695386a7afa5cb3f99e7fb879b",
     "fixtures/api/rtc-control-outgoing.json": "72f297f28ab5a203932655320f68dc0e54faa81bf66784edf8feba55113f0761",

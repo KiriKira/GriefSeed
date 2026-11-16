@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "operation_id": "4b2f0f7a-6c1e-4e7b-9a0e-6f3d2c1b0a99",
+  "call_id": "9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a",
+  "gateway_id": "00000000-0000-4000-8000-000000000003",
+  "sim_id": "00000000-0000-4000-8000-000000000004",
+  "mapping_revision": 1,
+  "to": "",
+  "from": "测试通话",
+  "test_request_id": "0f1e2d3c-4b5a-4968-8776-655443322110"
+}

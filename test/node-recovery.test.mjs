@@ -975,3 +975,156 @@ test("SQLite cold restart preserves claims, replay tombstones and expired unknow
     await f.close();
   }
 });
+
+test("a test call is requested by one host, pushed to the gateway and rings only that host", async () => {
+  const f = await fixture();
+  try {
+    const other = await f.pair("client");
+    assert.equal(
+      (
+        await f.send(
+          "/rtc/control/capability",
+          "POST",
+          { version: 1, enabled: true },
+          other.access_token,
+        )
+      ).status,
+      200,
+    );
+    const capabilities = await (await f.send("/capabilities")).json();
+    assert.equal(capabilities.test_call_v1, true);
+    const opened = await f.send(
+      "/rtc/control/ws",
+      "GET",
+      undefined,
+      f.gateway.access_token,
+      { Upgrade: "websocket" },
+    );
+    assert.equal(opened.status, 101);
+    const socket = opened.webSocket;
+    socket.accept();
+    const pushed = new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(Error("no snapshot")), 3000);
+      socket.addEventListener("message", (e) => {
+        const data = JSON.parse(e.data);
+        if (data.event === "snapshot" && data.test_call_requests?.length) {
+          clearTimeout(timeout);
+          resolve(data);
+        }
+      });
+    });
+    const request = (p, operation_id = crypto.randomUUID()) =>
+      f.send(
+        "/rtc/control/test-calls",
+        "POST",
+        { version: 1, operation_id, gateway_id: f.gateway.device_id },
+        p.access_token,
+      );
+    assert.equal((await request(f.gateway)).status, 403);
+    const operation = crypto.randomUUID();
+    const first = await request(f.host, operation);
+    assert.equal(first.status, 201);
+    const created = await first.json();
+    const replay = await request(f.host, operation);
+    assert.equal(replay.status, 200);
+    assert.equal((await replay.json()).request_id, created.request_id);
+    // One pending test per gateway.
+    assert.equal((await request(other)).status, 409);
+
+    const snapshot = await pushed;
+    assert.equal(snapshot.test_call_requests[0].request_id, created.request_id);
+    assert.equal(snapshot.test_call_requests[0].client_id, f.host.device_id);
+    socket.close();
+    const listed = await (
+      await f.send(
+        "/rtc/control/calls",
+        "GET",
+        undefined,
+        f.gateway.access_token,
+      )
+    ).json();
+    assert.equal(listed.test_call_requests.length, 1);
+    const hostList = await (
+      await f.send("/rtc/control/calls", "GET", undefined, f.host.access_token)
+    ).json();
+    assert.equal(hostList.test_call_requests, undefined);
+
+    const incoming = (test_request_id) =>
+      f.send(
+        "/rtc/control/incoming",
+        "POST",
+        {
+          version: 1,
+          operation_id: crypto.randomUUID(),
+          call_id: crypto.randomUUID(),
+          gateway_id: f.gateway.device_id,
+          sim_id: f.sim,
+          mapping_revision: f.revision,
+          to: "",
+          from: "测试通话",
+          test_request_id,
+        },
+        f.gateway.access_token,
+      );
+    assert.equal((await incoming(crypto.randomUUID())).status, 404);
+    const response = await incoming(created.request_id);
+    assert.equal(response.status, 201, await response.clone().text());
+    const call = await response.json();
+    assert.equal(call.test, true);
+    assert.equal(call.state, "ringing");
+    // Only the requester sees it.
+    assert.equal(
+      (
+        await f.send(
+          "/rtc/control/calls/" + call.call_id,
+          "GET",
+          undefined,
+          other.access_token,
+        )
+      ).status,
+      404,
+    );
+    const seen = await (
+      await f.send(
+        "/rtc/control/calls/" + call.call_id,
+        "GET",
+        undefined,
+        f.host.access_token,
+      )
+    ).json();
+    assert.equal(seen.test, true);
+    // The used request can never start another call.
+    const after = await (
+      await f.send(
+        "/rtc/control/calls",
+        "GET",
+        undefined,
+        f.gateway.access_token,
+      )
+    ).json();
+    assert.equal(after.test_call_requests.length, 0);
+    assert.equal((await incoming(created.request_id)).status, 409);
+    const ended = await f.operation(call, f.gateway, "ended");
+    assert.equal(ended.status, 200);
+    assert.equal((await incoming(created.request_id)).status, 404);
+    // Outgoing creates cannot carry a test request id.
+    const outgoing = await f.send(
+      "/rtc/control/calls",
+      "POST",
+      {
+        version: 1,
+        operation_id: crypto.randomUUID(),
+        call_id: crypto.randomUUID(),
+        gateway_id: f.gateway.device_id,
+        sim_id: f.sim,
+        mapping_revision: f.revision,
+        to: "+15550100",
+        test_request_id: created.request_id,
+      },
+      f.host.access_token,
+    );
+    assert.equal(outgoing.status, 400);
+  } finally {
+    await f.close();
+  }
+});

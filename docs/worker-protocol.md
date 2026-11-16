@@ -39,3 +39,10 @@ HTTP 线格式取自 `protocol/openapi.yaml`；出处及摘要在 `protocol/prov
 
 `cold_standby_v1`：主节点健康时不对非活动冷备周期探测；主节点失败的同一轮重新认证并探测冷备，再按既有选择策略激活和同步。
 无推送仍有周期主节点检查及 HTTP/wake 恢复。网关约每 60 秒真实提交心跳，持久 ACK 后才推进本地 sequence；不伪造缓存心跳 ACK。
+
+## 测试通话（`test_call_v1`）
+
+与 SoulGem 相同：主机 `POST /v1/rtc/control/test-calls` 请求一次测试通话，请求保留 30 秒、每个网关同时只允许一个。
+网关在 `GET /v1/rtc/control/calls` 和控制 WebSocket 的 snapshot 事件里收到 `test_call_requests`（创建请求时会主动唤醒网关的控制连接，不向主机发推送），
+再用带 `test_request_id` 的普通来电创建测试通话。该通话标记 `test: true`，只振铃发起请求的主机；用过或过期的请求不能再创建通话。
+

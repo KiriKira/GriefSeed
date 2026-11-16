@@ -42,6 +42,9 @@ export class NodeSockets {
           version: 1,
           event: "snapshot",
           calls: this.node().rtc.currentCalls(principal),
+          ...(principal.role === "gateway"
+            ? { test_call_requests: this.node().rtc.pendingTests(principal) }
+            : {}),
         }),
       );
     return new Response(null, { status: 101, webSocket: client });
@@ -141,6 +144,11 @@ export class NodeSockets {
               version: 1,
               event: "snapshot",
               calls: this.node().rtc.currentCalls(principal),
+              ...(principal.role === "gateway"
+                ? {
+                    test_call_requests: this.node().rtc.pendingTests(principal),
+                  }
+                : {}),
             }),
           );
           continue;

@@ -1,5 +1,6 @@
 export function RTCControlCapability(value:unknown):boolean;
 export function RTCControlCreate(value:unknown):boolean;
+export function RTCTestCallPending(value:unknown):boolean;
 export function RTCOutgoingCall(value:unknown):boolean;
 export function RTCIncomingCall(value:unknown):boolean;
 export function RTCControlOperation(value:unknown):boolean;

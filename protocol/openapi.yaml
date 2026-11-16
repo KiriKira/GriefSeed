@@ -91,7 +91,50 @@ paths:
                     type: array
                     maxItems: 32
                     items: {$ref: '#/components/schemas/RTCControlSnapshot'}
+                  test_call_requests:
+                    type: array
+                    maxItems: 4
+                    description: >-
+                      Gateway only, from a node advertising test_call_v1:
+                      unexpired test-call requests not yet turned into a call,
+                      oldest first. The gateway answers one by creating an
+                      incoming call with its test_request_id.
+                    items: {$ref: '#/components/schemas/RTCTestCallPending'}
         '401': {$ref: '#/components/responses/Unauthorized'}
+  /rtc/control/test-calls:
+    post:
+      operationId: requestRTCTestCall
+      description: >-
+        Client only, on a node advertising test_call_v1. Asks the gateway for
+        a test call: a virtual incoming call that plays a recording and rings
+        this client alone. Nothing is reserved; the gateway finds the request
+        in its call list within the request window and creates the call with
+        test_request_id through the ordinary incoming rules. Replaying the
+        same operation_id returns the same request.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [version, operation_id, gateway_id]
+              properties:
+                version: {type: integer, const: 1}
+                operation_id: {$ref: '#/components/schemas/UUID'}
+                gateway_id: {$ref: '#/components/schemas/UUID'}
+      responses:
+        '201': {$ref: '#/components/responses/RTCTestCallRequest'}
+        '200': {$ref: '#/components/responses/RTCTestCallRequest'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409':
+          description: >-
+            CALL_BUSY: the gateway has a call or a pending test request.
+            CALL_STATE_CONFLICT: the operation_id was used for another gateway.
+        '503':
+          description: GATEWAY_UNAVAILABLE. The gateway is offline or has no live call control.
   /rtc/control/incoming-policy:
     get:
       operationId: getRTCIncomingPolicy
@@ -689,6 +732,19 @@ components:
       required: true
       schema: {type: string, minLength: 16, maxLength: 128}
   responses:
+    RTCTestCallRequest:
+      description: The pending test-call request.
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [version, request_id, gateway_id, expires_at]
+            properties:
+              version: {type: integer, const: 1}
+              request_id: {$ref: '#/components/schemas/UUID'}
+              gateway_id: {$ref: '#/components/schemas/UUID'}
+              expires_at: {type: string, format: date-time}
     RTCControlSnapshot:
       description: Committed independent call snapshot, scoped to the authenticated participant.
       content:
@@ -770,6 +826,20 @@ components:
             until the caller or the network gives up; others send what is left
             of a 25 s window. It is not part of the operation's identity: a
             retry may send less and replays the first answer.
+        test_request_id:
+          allOf: [{$ref: '#/components/schemas/UUID'}]
+          description: >-
+            Incoming only, to a node advertising test_call_v1. Creates the
+            test call for this pending request: it rings only the requesting
+            client and is marked test. An expired or used request is 404.
+    RTCTestCallPending:
+      type: object
+      additionalProperties: false
+      required: [request_id, client_id, expires_at]
+      properties:
+        request_id: {$ref: '#/components/schemas/UUID'}
+        client_id: {$ref: '#/components/schemas/UUID'}
+        expires_at: {type: string, format: date-time}
     RTCOutgoingCall:
       allOf:
         - {$ref: '#/components/schemas/RTCControlCreate'}
@@ -777,7 +847,10 @@ components:
           properties:
             to: {type: string, minLength: 1}
             from: {const: ''}
-          not: {required: [remaining_ring_ms]}
+          not:
+            anyOf:
+              - {required: [remaining_ring_ms]}
+              - {required: [test_request_id]}
       unevaluatedProperties: false
     RTCIncomingCall:
       allOf: [{$ref: '#/components/schemas/RTCControlCreate'}]
@@ -816,6 +889,7 @@ components:
             winner_client_id: {$ref: '#/components/schemas/UUID'}
             global_decline: {type: boolean, description: 'Incoming call whose gateway decides decline_all.'}
             decline_requested: {type: boolean, description: 'A host asked to decline the whole call; the gateway has not ended it yet.'}
+            test: {type: boolean, description: 'A test call: the gateway plays a recording; no cellular call exists. Rings only the requesting client.'}
             remaining_ms:
               type: integer
               minimum: 0
@@ -1131,6 +1205,9 @@ components:
         ice_servers_v1:
           type: boolean
           description: Supports authenticated call-independent GET /rtc/ice-servers.
+        test_call_v1:
+          type: boolean
+          description: Clients may request test calls (POST /rtc/control/test-calls); gateways receive test_call_requests and may send test_request_id.
         incoming_ring_until_end:
           type: boolean
           description: Gateways may send remaining_ring_ms up to 300000 and end the call when the cellular call ends, so hosts ring until the caller or the network gives up.

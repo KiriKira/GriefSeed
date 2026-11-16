@@ -48,6 +48,32 @@ export class NodeRTC {
       }),
     );
   }
+  /** Unexpired, unused test-call requests for this gateway, oldest first. */
+  pendingTests(p: Principal): Data[] {
+    if (p.role !== "gateway") return [];
+    return this.store
+      .select(
+        "test-request",
+        "device=? AND json_extract(body,'$.call_id') IS NULL AND json_extract(body,'$.expires_ms')>?",
+        [p.id, Date.now()],
+        "json_extract(body,'$.created_ms')",
+        4,
+      )
+      .map((r) => ({
+        request_id: r.request_id,
+        client_id: r.client_id,
+        expires_at: iso(Number(r.expires_ms)),
+      }));
+  }
+  private wakeGateway(gateway: string) {
+    this.store.sql.exec(
+      "INSERT INTO node_outbox(id,device,kind,payload) VALUES (?,?,?,?)",
+      crypto.randomUUID(),
+      gateway,
+      "gateway",
+      canonical({ gateway }),
+    );
+  }
   private end(call: Data, reason: string) {
     call._ended_at = Date.now();
     this.bump(call, "ended", reason);
@@ -156,6 +182,11 @@ export class NodeRTC {
     return call;
   }
   sweep(): void {
+    // Test-call requests live 30 s; keep a day for diagnostics, then drop them.
+    this.store.sql.exec(
+      "DELETE FROM node_records WHERE kind='test-request' AND json_extract(body,'$.expires_ms')<?",
+      Date.now() - 86_400_000,
+    );
     for (const row of this.store.sql
       .exec<{
         body: string;
@@ -236,6 +267,86 @@ export class NodeRTC {
         status: 200,
       };
     }
+    if (path === "/v1/rtc/control/test-calls" && method === "POST") {
+      requireThat(p.role === "client", "CALL_FORBIDDEN", 403);
+      requireThat(
+        body.version === 1 &&
+          Object.keys(body).every((k) =>
+            ["version", "operation_id", "gateway_id"].includes(k),
+          ),
+        "INVALID_CALL_REQUEST",
+      );
+      const gateway = uuid(body.gateway_id);
+      const operation = uuid(body.operation_id);
+      const device = this.store.sql
+        .exec<{
+          role: string;
+        }>(
+          "SELECT role FROM node_devices WHERE id=? AND state='active'",
+          gateway,
+        )
+        .toArray()[0];
+      requireThat(device?.role === "gateway", "CALL_FORBIDDEN", 403);
+      // A replay answers 200 with the request it created, like SoulGem.
+      const replayed = this.store.sql
+        .exec<{
+          id: string;
+        }>(
+          "SELECT id FROM node_operations WHERE scope=? AND id=?",
+          "test-call:" + p.id,
+          operation,
+        )
+        .toArray().length;
+      const reply = this.store.replay(
+        "test-call:" + p.id,
+        operation,
+        sha({ gateway_id: gateway }),
+        () => {
+          const g = this.store.get("gateway", gateway);
+          const cap = this.store.get("rtc-capability", gateway);
+          requireThat(
+            g &&
+              Number(g.last_seen) > Date.now() - 90_000 &&
+              cap?.enabled === true &&
+              Number(cap.seen) > Date.now() - 90_000,
+            "GATEWAY_UNAVAILABLE",
+            503,
+          );
+          requireThat(
+            !this.store.get("slot", gateway) &&
+              this.pendingTests({ ...p, role: "gateway", id: gateway })
+                .length === 0,
+            "GATEWAY_BUSY",
+            409,
+          );
+          const created = Date.now();
+          const request: Data = {
+            request_id: crypto.randomUUID(),
+            client_id: p.id,
+            created_ms: created,
+            expires_ms: created + 30_000,
+            call_id: null,
+          };
+          this.store.put(
+            "test-request",
+            string(request.request_id),
+            gateway,
+            request,
+          );
+          this.wakeGateway(gateway);
+          return {
+            body: {
+              version: 1,
+              request_id: request.request_id,
+              gateway_id: gateway,
+              expires_at: iso(Number(request.expires_ms)),
+            },
+            status: 201,
+          };
+        },
+      );
+      return replayed ? { ...reply, status: 200 } : reply;
+    }
     if (
       ["/v1/rtc/control/calls", "/v1/rtc/control/incoming"].includes(path) &&
       method === "POST"
@@ -248,6 +359,10 @@ export class NodeRTC {
           : p.role === "client",
         "CALL_FORBIDDEN",
         403,
+      );
+      requireThat(
+        incoming || body.test_request_id === undefined,
+        "INVALID_CALL_REQUEST",
       );
       const identity = { ...body };
       delete identity.remaining_ring_ms;
@@ -295,7 +410,38 @@ export class NodeRTC {
         409,
       );
       conflict(!this.store.get("call", id));
-      const clients = incoming ? this.candidates() : [p.id];
+      let test: Data | undefined;
+      if (body.test_request_id !== undefined) {
+        test = this.store.get("test-request", uuid(body.test_request_id));
+        const requester = test
+          ? this.store.sql
+              .exec<{
+                id: string;
+              }>(
+                "SELECT id FROM node_devices WHERE id=? AND role='client' AND state='active'",
+                string(test.client_id),
+              )
+              .toArray()[0]
+          : undefined;
+        requireThat(
+          test &&
+            requester &&
+            test.call_id === null &&
+            Number(test.expires_ms) > Date.now() &&
+            this.store.select("test-request", "id=? AND device=?", [
+              string(test.request_id),
+              gateway,
+            ]).length === 1,
+          "CALL_NOT_FOUND",
+          404,
+        );
+      }
+      // A test call rings the host that asked for it, and no other.
+      const clients = test
+        ? [string(test.client_id)]
+        : incoming
+          ? this.candidates()
+          : [p.id];
       requireThat(
         clients.length > 0,
         body.remaining_ring_ms
@@ -333,7 +479,12 @@ export class NodeRTC {
         _participants: participants,
         _gateway_seen: created,
         _client_seen: created,
+        ...(test ? { test: true } : {}),
       };
+      if (test) {
+        test.call_id = id;
+        this.store.put("test-request", string(test.request_id), gateway, test);
+      }
       this.store.put("slot", gateway, gateway, { call_id: id });
       this.save(call);
       this.wake(call);
@@ -372,6 +523,9 @@ export class NodeRTC {
                 version: 1,
                 calls: calls.map((c) => this.snapshot(p, c)),
                 poll_after_ms: 750,
+                ...(p.role === "gateway"
+                  ? { test_call_requests: this.pendingTests(p) }
+                  : {}),
               },
         status: 200,
       };

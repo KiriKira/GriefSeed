@@ -96,6 +96,7 @@ export default {
           global_decline_v1: true,
           incoming_ring_until_end: true,
           ice_servers_v1: true,
+          test_call_v1: true,
         });
       if (
         env.NODE_ENABLED === "true" &&
@@ -104,7 +105,7 @@ export default {
       ) {
         // Reject unknown paths before touching the deployment object.
         const routes =
-          /^\/v1\/(?:pairings\/claim|auth\/(?:refresh|revoke)|clients|gateways(?:\/[A-Za-z0-9_-]+\/(?:sims|heartbeat|sim-bindings|events:batch|commands(?:\/[A-Za-z0-9_-]+\/claim)?))?|messages(?:\/[A-Za-z0-9_-]+)?|events(?:\/ack)?|devices\/self\/(?:rtc-capability|reception|push-endpoint(?:\/test)?)|rtc\/(?:control\/(?:ws|capability|incoming(?:-policy)?|calls(?:\/[A-Za-z0-9_-]+(?:\/operations)?)?)|legs\/[A-Za-z0-9_-]+)|calls(?:\/[A-Za-z0-9_-]+(?:\/media(?:\/active)?)?)?|ws)$/;
+          /^\/v1\/(?:pairings\/claim|auth\/(?:refresh|revoke)|clients|gateways(?:\/[A-Za-z0-9_-]+\/(?:sims|heartbeat|sim-bindings|events:batch|commands(?:\/[A-Za-z0-9_-]+\/claim)?))?|messages(?:\/[A-Za-z0-9_-]+)?|events(?:\/ack)?|devices\/self\/(?:rtc-capability|reception|push-endpoint(?:\/test)?)|rtc\/(?:control\/(?:ws|capability|incoming(?:-policy)?|test-calls|calls(?:\/[A-Za-z0-9_-]+(?:\/operations)?)?)|legs\/[A-Za-z0-9_-]+)|calls(?:\/[A-Za-z0-9_-]+(?:\/media(?:\/active)?)?)?|ws)$/;
         if (!routes.test(path)) return error("NOT_FOUND", 404);
         const publicRoute =
           path === "/v1/pairings/claim" || path === "/v1/auth/refresh";
