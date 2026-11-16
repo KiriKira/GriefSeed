@@ -18,7 +18,8 @@ export class NodeBudget {
           period,
         )
         .toArray()[0];
-      if (row && row.count >= maximum) throw new NodeError(429, "RATE_LIMITED");
+      if (row && row.count >= maximum)
+        throw new NodeError(429, "RATE_LIMITED", period + windowMs);
       this.store.sql.exec(
         "INSERT INTO node_budgets VALUES (?,?,1) ON CONFLICT(scope,period) DO UPDATE SET count=count+1",
         scope,

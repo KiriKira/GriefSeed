@@ -1,4 +1,11 @@
-import { requireThat, string, integer, iso, type Data } from "./node-protocol";
+import {
+  NodeError,
+  requireThat,
+  string,
+  integer,
+  iso,
+  type Data,
+} from "./node-protocol";
 import { NodeStore } from "./node-store";
 import type { Principal } from "./node-auth";
 import type { Env } from "./index";
@@ -109,11 +116,12 @@ export class NodePush {
     }
     if (request.method === "POST" && path === root + "/test") {
       requireThat(old, "PUSH_NOT_REGISTERED", 404);
-      requireThat(
-        Number(old.tested_at) < Date.now() - 60_000,
-        "PUSH_TEST_TOO_SOON",
-        429,
-      );
+      if (Number(old.tested_at) >= Date.now() - 60_000)
+        throw new NodeError(
+          429,
+          "PUSH_TEST_TOO_SOON",
+          Number(old.tested_at) + 60_000,
+        );
       old.tested_at = Date.now();
       this.store.put("push", p.id, p.id, old);
       const status = await this.post(

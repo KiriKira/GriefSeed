@@ -664,7 +664,7 @@ export class NodeState {
               429,
               {
                 "Retry-After": String(
-                  Math.max(1, Math.ceil((86400_000 - (Date.now() % 86400_000)) / 1000)),
+                  Math.max(1, Math.ceil((failure.retryAt - Date.now()) / 1000)),
                 ),
               },
             )

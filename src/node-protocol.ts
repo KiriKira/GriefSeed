@@ -4,6 +4,7 @@ export class NodeError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
+    readonly retryAt: number = Date.now() + 60_000,
   ) {
     super(code);
   }

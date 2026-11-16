@@ -46,3 +46,14 @@ HTTP 线格式取自 `protocol/openapi.yaml`；出处及摘要在 `protocol/prov
 网关在 `GET /v1/rtc/control/calls` 和控制 WebSocket 的 snapshot 事件里收到 `test_call_requests`（创建请求时会主动唤醒网关的控制连接，不向主机发推送），
 再用带 `test_request_id` 的普通来电创建测试通话。该通话标记 `test: true`，只振铃发起请求的主机；用过或过期的请求不能再创建通话。
 
+
+### Review fixes: termination, revocation and rate limits
+
+A committed `end_requested` blocks new winner/dispatch/active transitions; only
+termination operations may advance that call. Existing operation replays remain
+idempotent. `/v1/auth/revoke` accepts the refresh token without an access header,
+including the previous refresh token during the 15-minute recovery window.
+Repeated revocation returns 204. Revocation removes push registration and cached
+ICE credentials and queues outstanding TURN credentials for durable revocation.
+Rate-limit responses carry the actual window deadline: push probes cool down for
+at most 60 seconds, while hourly and daily budgets use their own reset boundaries.
