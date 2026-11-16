@@ -247,6 +247,8 @@ test("actual SQLite DO issuance survives restart; revocation persists, fails clo
     ).json();
     assert.equal(list.tokens[0].revoked !== null, true);
     assert.equal(list.revocations[0].pending, 1);
+    assert.equal(list.revocations[0].revoked_upstream, 0);
+    assert.notEqual(list.revocations[0].last_status, 204);
     fail = false;
     await mf.dispatchFetch(`https://local/admin/tokens/${token.id}/revoke`, {
       method: "POST",
@@ -259,7 +261,12 @@ test("actual SQLite DO issuance survives restart; revocation persists, fails clo
         headers: newHeaders,
       })
     ).json();
-    assert.equal(list.revocations.length, 0);
+    // A done revoke stays visible until the credential expires.
+    assert.equal(list.revocations.length, 1);
+    assert.equal(list.revocations[0].pending, 0);
+    assert.equal(list.revocations[0].revoked_upstream, 1);
+    assert.equal(list.revocations[0].last_status, 204);
+    assert.ok(list.revocations[0].last_revoked_at > 0);
     assert.equal(revoked.length, 1);
   } finally {
     if (mf) await mf.dispose();

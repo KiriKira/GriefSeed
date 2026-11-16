@@ -167,7 +167,7 @@ export class NodeRecovery {
         );
       for (const row of credentials)
         this.sql.exec(
-          "INSERT OR IGNORE INTO credentials VALUES (?,?,?,?,?,?,?)",
+          "INSERT OR IGNORE INTO credentials(username,key_id,token_id,expires,pending,attempts,next_try) VALUES (?,?,?,?,?,?,?)",
           row.username,
           row.key_id,
           row.token_id,

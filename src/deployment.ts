@@ -100,6 +100,16 @@ export class Deployment extends DurableObject<Env> {
       this.sql.exec(
         `CREATE TABLE IF NOT EXISTS credentials (username TEXT NOT NULL,key_id TEXT NOT NULL,token_id TEXT NOT NULL REFERENCES tokens(id),expires INTEGER NOT NULL,pending INTEGER NOT NULL DEFAULT 0,attempts INTEGER NOT NULL DEFAULT 0,next_try INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(key_id,username))`,
       );
+      // Upstream revocation outcome, kept until the credential expires so an
+      // operator can see that Cloudflare accepted the revoke (status 204).
+      const credentialColumns = this.sql
+        .exec<{ name: string }>("PRAGMA table_info(credentials)")
+        .toArray()
+        .map((c) => c.name);
+      if (!credentialColumns.includes("revoked_at"))
+        this.sql.exec("ALTER TABLE credentials ADD COLUMN revoked_at INTEGER");
+      if (!credentialColumns.includes("last_status"))
+        this.sql.exec("ALTER TABLE credentials ADD COLUMN last_status INTEGER");
       this.sql.exec(
         `CREATE TABLE IF NOT EXISTS admin_sessions (hash TEXT PRIMARY KEY,expires INTEGER NOT NULL)`,
       );
@@ -284,7 +294,13 @@ export class Deployment extends DurableObject<Env> {
           .toArray();
         const tasks = this.sql
           .exec(
-            "SELECT token_id,count(*) AS pending FROM credentials WHERE pending=1 AND expires>? GROUP BY token_id",
+            `SELECT token_id,
+               SUM(CASE WHEN pending=1 THEN 1 ELSE 0 END) AS pending,
+               SUM(CASE WHEN revoked_at IS NOT NULL THEN 1 ELSE 0 END) AS revoked_upstream,
+               MAX(attempts) AS attempts,
+               MAX(revoked_at) AS last_revoked_at,
+               (SELECT c2.last_status FROM credentials c2 WHERE c2.token_id=credentials.token_id AND c2.last_status IS NOT NULL ORDER BY COALESCE(c2.revoked_at,c2.next_try) DESC LIMIT 1) AS last_status
+             FROM credentials WHERE expires>? AND (pending=1 OR revoked_at IS NOT NULL) GROUP BY token_id`,
             now(),
           )
           .toArray();
@@ -502,7 +518,15 @@ export class Deployment extends DurableObject<Env> {
           );
         } catch {}
         try {
-          await this.revoke(this.env.TURN_KEY_ID, server.username);
+          if (
+            (await this.revoke(this.env.TURN_KEY_ID, server.username)) === 204
+          )
+            this.sql.exec(
+              "UPDATE credentials SET pending=0,revoked_at=?,last_status=204 WHERE key_id=? AND username=?",
+              now(),
+              this.env.TURN_KEY_ID,
+              server.username,
+            );
         } catch {}
       }
       try {
@@ -635,7 +659,8 @@ export class Deployment extends DurableObject<Env> {
         await this.ctx.storage.setAlarm(now() + 1000);
     }
   }
-  private async revoke(key: string, username: string): Promise<void> {
+  /** Cloudflare's answer to revoking one credential; 204 means revoked. */
+  private async revoke(key: string, username: string): Promise<number> {
     const response = await fetch(
       `https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(key)}/credentials/${encodeURIComponent(username)}/revoke`,
       {
@@ -645,7 +670,7 @@ export class Deployment extends DurableObject<Env> {
         redirect: "manual",
       },
     );
-    if (response.status !== 204) throw Error("revoke_failed");
+    return response.status;
   }
   private async drainRevocations(): Promise<void> {
     const rows = this.sql
@@ -656,21 +681,26 @@ export class Deployment extends DurableObject<Env> {
       )
       .toArray();
     for (const row of rows) {
+      let status = 0;
       try {
-        await this.revoke(row.key_id, row.username);
+        status = await this.revoke(row.key_id, row.username);
+      } catch {}
+      if (status === 204)
+        // Kept (not deleted) until it expires: the record of a done revoke.
         this.sql.exec(
-          "DELETE FROM credentials WHERE key_id=? AND username=?",
+          "UPDATE credentials SET pending=0,revoked_at=?,last_status=204 WHERE key_id=? AND username=?",
+          now(),
           row.key_id,
           row.username,
         );
-      } catch {
+      else
         this.sql.exec(
-          "UPDATE credentials SET attempts=attempts+1,next_try=? WHERE key_id=? AND username=?",
+          "UPDATE credentials SET attempts=attempts+1,last_status=?,next_try=? WHERE key_id=? AND username=?",
+          status,
           now() + Math.min(3600_000, 15000 * 2 ** Math.min(row.attempts, 8)),
           row.key_id,
           row.username,
         );
-      }
     }
   }
   async alarm(): Promise<void> {
