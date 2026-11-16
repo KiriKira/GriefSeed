@@ -9,7 +9,7 @@
 - 两端：构建 APK、应用/rtcmedia 单元测试、lint；真实 UDP STUN/TURN 应答、不同凭据回退、HTTPS 链接边界、加密存储、账户/鉴权失效、共同截止时间、候选分组预算、连接内刷新、空缓存、HTTP 回退与业务续租。
 
 仍待设备/真实平台验收：固定 SDK 的强制中继、UDP/TLS 故障切换、来源显示、双网卡/IPv6、Doze/网络切换、蜂窝 END 与多主机/推送竞态。
-当前机器无 `/dev/kvm`。Cloudflare 账号的 Deploy/升级、真实 TURN key 权限、吊销 Allocate/已有 allocation 的效果和 24 小时账单仍需部署者账号。
+当前机器无 `/dev/kvm`。Cloudflare 账号的 Deploy/升级、真实 TURN key 权限、吊销对新 Allocate/已有 allocation 的效果（由 2 小时默认 TTL 兜底，不再单独验收）和 24 小时账单仍需部署者账号。
 
 设备构建：两端执行 `./gradlew -PrtcEmulator=true -PforceRtcRelay=true :app:assembleDebug`。
 该开关仅影响 debug；默认构建和 release 保留直连优先，不强制中继。构建可同时包含 arm64/x86_64。

@@ -401,7 +401,7 @@ export class Deployment extends DurableObject<Env> {
       token.id,
     );
     let upstream: IceServer[] = [];
-    const ttl = Number(this.env.CREDENTIAL_TTL || "86400");
+    const ttl = Number(this.env.CREDENTIAL_TTL || "7200");
     if (!Number.isInteger(ttl) || ttl < 60 || ttl > 86400)
       return error("INVALID_TTL", 503);
     const started = now();

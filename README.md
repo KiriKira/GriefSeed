@@ -20,7 +20,7 @@ Cloudflare Workers + SQLite Durable Objects 版 SoulGem：同一个部署提供�
 
 管理页能发放/吊销来源 token、显示签发及撤销任务、撤销设备、查看设备操作计数、下载和恢复备份。
 链接与二维码只在生成时显示，服务端保存 token 哈希。来源 token 与节点会话分离，不能用于读取短信或控制通话。
-凭据 TTL 默认 24 小时，可设 `CREDENTIAL_TTL=60..86400`；端口 53 仅在 Cloudflare 适配器中过滤。
+凭据 TTL 默认 2 小时，可设 `CREDENTIAL_TTL=60..86400`（不建议低于 3600：手机在剩余 30 分钟时就会重取）。手机每小时至少重取一次外部来源凭据，吊销令牌后，即使 Cloudflare 不拒绝已签发凭据，泄露的凭据最多也只能再用一个 TTL；端口 53 仅在 Cloudflare 适配器中过滤。
 
 ## 手机兼容与状态
 
