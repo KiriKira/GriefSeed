@@ -210,6 +210,40 @@ export class NodeState {
           ),
         );
       }
+      if (path === "/v1/auth/revoke" && method === "POST") {
+        validate("RefreshRequest", body);
+        if (supplied) this.auth.recheck(supplied);
+        this.budget.consume(
+          "revoke:" +
+            String(request.headers.get("CF-Connecting-IP") || "unknown"),
+          1000,
+          3600_000,
+        );
+        const refreshHash = createHash("sha256")
+          .update(string(body.refresh_token))
+          .digest("base64url");
+        this.store.storage.transactionSync(() => {
+          const device = this.auth.revoke(refreshHash, supplied?.id);
+          if (!device) return;
+          const relay = createHash("sha256")
+            .update("node-relay:" + device)
+            .digest("base64url");
+          this.store.sql.exec(
+            "UPDATE tokens SET revoked=COALESCE(revoked,?) WHERE id=? AND kind=?",
+            Date.now(),
+            relay,
+            "node",
+          );
+          this.store.sql.exec(
+            "UPDATE credentials SET pending=1,next_try=0 WHERE token_id=? AND expires>?",
+            relay,
+            Date.now(),
+          );
+          this.store.remove("ice-cache", device);
+          this.store.remove("push", device);
+        });
+        return new Response(null, { status: 204 });
+      }
       const p = supplied || (await this.auth.authenticate(request));
       this.auth.recheck(p);
       const critical =
@@ -247,31 +281,6 @@ export class NodeState {
       const output = this.store.storage.transactionSync(() => {
         this.auth.recheck(p);
         this.expire();
-        if (path === "/v1/auth/revoke" && method === "POST") {
-          validate("RefreshRequest", body);
-          this.auth.revoke(
-            p,
-            createHash("sha256")
-              .update(string(body.refresh_token))
-              .digest("base64url"),
-          );
-          const relay = createHash("sha256")
-            .update("node-relay:" + p.id)
-            .digest("base64url");
-          this.store.sql.exec(
-            "UPDATE tokens SET revoked=COALESCE(revoked,?) WHERE id=? AND kind=?",
-            Date.now(),
-            relay,
-            "node",
-          );
-          this.store.sql.exec(
-            "UPDATE credentials SET pending=1,next_try=0 WHERE token_id=? AND expires>?",
-            relay,
-            Date.now(),
-          );
-          this.store.remove("ice-cache", p.id);
-          return { body: null, status: 204 };
-        }
         if (path === "/v1/clients" && method === "GET") {
           this.client(p);
           return result({
@@ -655,10 +664,7 @@ export class NodeState {
               429,
               {
                 "Retry-After": String(
-                  Math.max(
-                    1,
-                    Math.ceil((86400_000 - (Date.now() % 86400_000)) / 1000),
-                  ),
+                  Math.max(1, Math.ceil((86400_000 - (Date.now() % 86400_000)) / 1000)),
                 ),
               },
             )

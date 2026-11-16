@@ -851,8 +851,10 @@ test("experimental node pairs each role once, rotates sessions recoverably, bind
       backup.tables.node_gateway_events.length,
     );
 
-    r = await send("/auth/revoke", "POST", {}, host.access_token);
-    assert.equal(r.status, 401);
+    r = await send("/auth/revoke", "POST", {
+      refresh_token: host.refresh_token,
+    });
+    assert.equal(r.status, 204);
     assert.equal(
       (await send("/clients", "GET", undefined, host.access_token)).status,
       401,

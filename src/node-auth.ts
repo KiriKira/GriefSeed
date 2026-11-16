@@ -269,20 +269,22 @@ export class NodeAuth {
       };
     });
   }
-  revoke(p: Principal, refreshHash: string): Data {
-    this.recheck(p);
+  revoke(refreshHash: string, expectedDevice?: string): string | undefined {
+    const session = this.store.sql
+      .exec<Session>(
+        "SELECT * FROM node_sessions WHERE refresh_hash=? OR (previous_hash=? AND last_issued>?)",
+        refreshHash,
+        refreshHash,
+        Date.now() - 900_000,
+      )
+      .toArray()[0];
+    if (!session) return undefined;
     requireThat(
-      this.store.sql
-        .exec(
-          "SELECT id FROM node_sessions WHERE device=? AND refresh_hash=?",
-          p.id,
-          refreshHash,
-        )
-        .toArray().length > 0,
-      "SESSION_REVOKED",
-      401,
+      !expectedDevice || session.device === expectedDevice,
+      "SESSION_CHANGED",
+      403,
     );
-    this.store.sql.exec("DELETE FROM node_sessions WHERE device=?", p.id);
-    return { revoked: true };
+    this.store.sql.exec("DELETE FROM node_sessions WHERE id=?", session.id);
+    return session.device;
   }
 }
