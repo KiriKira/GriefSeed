@@ -566,6 +566,11 @@ export class NodeRTC {
             conflict(
               cellularEnd || ["hangup", "cancel", "reject"].includes(kind),
             );
+          conflict(
+            !call.end_requested ||
+              cellularEnd ||
+              ["hangup", "cancel"].includes(kind),
+          );
           switch (kind) {
             case "start":
               conflict(
