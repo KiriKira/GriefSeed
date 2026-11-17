@@ -57,3 +57,13 @@ Repeated revocation returns 204. Revocation removes push registration and cached
 ICE credentials and queues outstanding TURN credentials for durable revocation.
 Rate-limit responses carry the actual window deadline: push probes cool down for
 at most 60 seconds, while hourly and daily budgets use their own reset boundaries.
+
+### Push endpoints (Kyubey)
+
+`PUT /v1/devices/self/push-endpoint` follows SoulGem: after the relay accepts the
+`check` hint it answers 200 `{push: "ready", endpoint_generation}`, keeps the
+generation for the same endpoint, and records the check as the last delivery, so
+`GET` reports a working relay right after registration. A 404, 410, redirect or
+other 4xx from the relay is 422 `PUSH_ENDPOINT_REJECTED` (the phone then asks
+Kyubey for a new endpoint); 429, 5xx, a Cloudflare challenge or a network failure
+is a retryable 503 `PUSH_UNAVAILABLE`.

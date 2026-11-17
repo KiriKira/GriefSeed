@@ -57,19 +57,33 @@ export class NodePush {
     urgency: string,
   ): Promise<number> {
     this.endpoint(endpoint);
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        TTL: String(ttl),
-        Urgency: urgency,
-      },
-      body: JSON.stringify(body),
-      redirect: "manual",
-      signal: AbortSignal.timeout(3000),
-    });
+    let response: Response;
+    try {
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          TTL: String(ttl),
+          Urgency: urgency,
+        },
+        body: JSON.stringify(body),
+        redirect: "manual",
+        signal: AbortSignal.timeout(3000),
+      });
+    } catch {
+      // Unreachable or too slow: a failed hand-off, not a node error.
+      return 0;
+    }
     await response.body?.cancel();
+    // A Cloudflare challenge in front of the relay is not the relay's answer;
+    // retry it later instead of rejecting the endpoint (as SoulGem does).
+    if (response.headers.get("Cf-Mitigated")) return 503;
     return response.status;
+  }
+  /** As SoulGem: 404, 410, redirects and other 4xx answers mean the endpoint
+   * will not reach the device; 429, 5xx and network failures are temporary. */
+  private static rejected(status: number): boolean {
+    return status >= 300 && status < 500 && status !== 429;
   }
   async route(request: Request, p: Principal): Promise<Response | undefined> {
     const path = new URL(request.url).pathname;
@@ -79,13 +93,17 @@ export class NodePush {
     requireThat(this.enabled, "PUSH_UNAVAILABLE", 503);
     const old = this.store.get("push", p.id);
     if (request.method === "GET" && path === root)
-      return json({
-        registered: !!old,
-        failures: old?.failures || 0,
-        delivered_at: old?.delivered_at || null,
-        call_failures: old?.call_failures || 0,
-        call_delivered_at: old?.call_delivered_at || null,
-      });
+      return json(
+        old
+          ? {
+              registered: true,
+              failures: Number(old.failures || 0),
+              call_failures: Number(old.call_failures || 0),
+              endpoint_generation: Number(old.generation),
+              ...(old.delivered_at ? { delivered_at: old.delivered_at } : {}),
+            }
+          : { registered: false },
+      );
     if (request.method === "DELETE" && path === root) {
       this.store.remove("push", p.id);
       return new Response(null, { status: 204 });
@@ -100,19 +118,28 @@ export class NodePush {
         60,
         "high",
       );
+      if (NodePush.rejected(status))
+        throw new NodeError(422, "PUSH_ENDPOINT_REJECTED");
       requireThat(status >= 200 && status < 300, "PUSH_UNAVAILABLE", 503);
       this.recheck(p);
+      const current = this.store.get("push", p.id);
+      // The same endpoint registering again keeps its generation.
       const generation =
-        Number(this.store.get("push-generation", p.id)?.generation || 0) + 1;
+        current?.endpoint === endpoint
+          ? Number(current.generation)
+          : Number(this.store.get("push-generation", p.id)?.generation || 0) +
+            1;
       this.store.put("push-generation", p.id, p.id, { generation });
+      // The relay just accepted the check, so the endpoint counts as working.
       this.store.put("push", p.id, p.id, {
         endpoint,
         generation,
         failures: 0,
         call_failures: 0,
-        tested_at: 0,
+        tested_at: Number(current?.tested_at || 0),
+        delivered_at: iso(),
       });
-      return new Response(null, { status: 204 });
+      return json({ push: "ready", endpoint_generation: generation });
     }
     if (request.method === "POST" && path === root + "/test") {
       requireThat(old, "PUSH_NOT_REGISTERED", 404);

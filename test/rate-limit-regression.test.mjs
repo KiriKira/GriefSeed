@@ -14,7 +14,7 @@ test("regression: push probe throttle must expire after a minute", async () => {
       { endpoint: "https://push.example/a" },
       f.host.access_token,
     );
-    assert.equal(registration.status, 204);
+    assert.equal(registration.status, 200);
     const first = await f.send(
       "/devices/self/push-endpoint/test",
       "POST",

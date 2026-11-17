@@ -490,6 +490,7 @@ test("strict wire parsing rejects duplicate/escaped duplicate keys, unsafe integ
 test("push endpoints use an exact allowlist, never follow redirects, and retain monotonic generations", async () => {
   const posted = [];
   let redirect = false;
+  let answer = 204;
   const f = await fixture({
     bindings: { PUSH_ALLOWED_HOSTS: "push.example,127.0.0.1,local.internal" },
     upstream: async (request) => {
@@ -499,7 +500,7 @@ test("push endpoints use an exact allowlist, never follow redirects, and retain 
             status: 302,
             headers: { Location: "https://other.example/" },
           })
-        : new Response(null, { status: 204 });
+        : new Response(null, { status: answer });
     },
   });
   try {
@@ -530,8 +531,32 @@ test("push endpoints use an exact allowlist, never follow redirects, and retain 
       { endpoint: "https://push.example/a" },
       f.host.access_token,
     );
-    assert.equal(r.status, 204);
+    assert.equal(r.status, 200);
+    assert.deepEqual(await r.json(), { push: "ready", endpoint_generation: 1 });
     assert.equal(posted[0].body.kind, "check");
+    // As on SoulGem, the accepted check counts as a delivery, so a phone
+    // does not report the relay as failing before any wake-up was due.
+    let status = await (
+      await f.send(
+        "/devices/self/push-endpoint",
+        "GET",
+        undefined,
+        f.host.access_token,
+      )
+    ).json();
+    assert.equal(status.registered, true);
+    assert.equal(status.failures, 0);
+    assert.equal(status.endpoint_generation, 1);
+    assert.ok(Date.parse(status.delivered_at) > 0);
+    assert.equal("call_delivered_at" in status, false);
+    // The same endpoint again keeps its generation.
+    r = await f.send(
+      "/devices/self/push-endpoint",
+      "PUT",
+      { endpoint: "https://push.example/a" },
+      f.host.access_token,
+    );
+    assert.equal((await r.json()).endpoint_generation, 1);
     r = await f.send(
       "/devices/self/push-endpoint",
       "DELETE",
@@ -539,13 +564,43 @@ test("push endpoints use an exact allowlist, never follow redirects, and retain 
       f.host.access_token,
     );
     assert.equal(r.status, 204);
+    status = await (
+      await f.send(
+        "/devices/self/push-endpoint",
+        "GET",
+        undefined,
+        f.host.access_token,
+      )
+    ).json();
+    assert.deepEqual(status, { registered: false });
     r = await f.send(
       "/devices/self/push-endpoint",
       "PUT",
       { endpoint: "https://push.example/b" },
       f.host.access_token,
     );
-    assert.equal(r.status, 204);
+    assert.equal(r.status, 200);
+    // A relay that no longer reaches the phone is rejected, so the phone
+    // asks Kyubey for a new endpoint; a busy relay is retried later.
+    answer = 410;
+    r = await f.send(
+      "/devices/self/push-endpoint",
+      "PUT",
+      { endpoint: "https://push.example/gone" },
+      f.host.access_token,
+    );
+    assert.equal(r.status, 422);
+    assert.equal((await r.json()).error.code, "PUSH_ENDPOINT_REJECTED");
+    answer = 503;
+    r = await f.send(
+      "/devices/self/push-endpoint",
+      "PUT",
+      { endpoint: "https://push.example/busy" },
+      f.host.access_token,
+    );
+    assert.equal(r.status, 503);
+    assert.equal((await r.json()).error.retryable, true);
+    answer = 204;
     const snapshot = await (
       await f.mf.dispatchFetch("https://local/admin/backup", {
         headers: f.admin,
@@ -562,8 +617,8 @@ test("push endpoints use an exact allowlist, never follow redirects, and retain 
       { endpoint: "https://push.example/redirect" },
       f.host.access_token,
     );
-    assert.equal(r.status, 503);
-    assert.equal(posted.length, 3);
+    assert.equal(r.status, 422);
+    assert.equal(posted.length, 6);
     assert.ok(posted.every((p) => p.url.startsWith("https://push.example/")));
   } finally {
     await f.close();
