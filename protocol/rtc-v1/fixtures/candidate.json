@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "call_id": "call-test",
+  "leg_id": "leg-test",
+  "attempt_id": "attempt-test",
+  "operation_id": "candidate-test",
+  "generation": 1,
+  "revision": 0,
+  "kind": "candidate",
+  "ice": {
+    "candidate": "candidate:1 1 UDP 1 192.0.2.1 1234 typ host",
+    "sdp_mid": "0",
+    "sdp_mline_index": 0
+  }
+}

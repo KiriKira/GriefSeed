@@ -1,0 +1,24 @@
+{
+  "sequence": 42,
+  "protocol_version": 1,
+  "app_version": "1.0.0",
+  "root": true,
+  "battery_percent": 87,
+  "charging": true,
+  "sim_states": [
+    {
+      "sim_id": "e3000000-0000-4000-8000-000000000001",
+      "mapping_revision": 3,
+      "service_state": "in_service",
+      "identity_verified": true,
+      "radio": {
+        "signal_level": 3,
+        "network_type": "LTE",
+        "network_operator": "Carrier A",
+        "roaming": false,
+        "country_iso": "CN"
+      }
+    }
+  ],
+  "install_id": "e9000000-0000-4000-8000-000000000001"
+}

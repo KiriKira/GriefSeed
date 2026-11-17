@@ -1,0 +1,50 @@
+{
+  "name": "griefseed",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "check": "tsc --noEmit",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "schemas": "node scripts/generate-schema.mjs",
+    "protocol": "node scripts/check-protocol.mjs",
+    "format:check": "prettier --check \"src/*.ts\" \"test/*.mjs\" \"test/*.ts\" \"scripts/*.mjs\""
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.0.0",
+    "@types/qrcode": "^1.5.0",
+    "esbuild": "0.28.2",
+    "miniflare": "^4.0.0",
+    "prettier": "^3.8.1",
+    "typescript": "^5.0.0",
+    "wrangler": "^4.0.0",
+    "yaml": "^2.0.0"
+  },
+  "dependencies": {
+    "ajv": "^8.0.0",
+    "ajv-formats": "^3.0.0",
+    "qrcode": "^1.5.4"
+  },
+  "cloudflare": {
+    "bindings": {
+      "DEPLOYMENT_ID": {
+        "description": "\u9996\u6b21\u90e8\u7f72\u7528\u4ed3\u5e93 setup.html \u5728\u672c\u5730\u751f\u6210\uff0c\u5347\u7ea7\u65f6\u4fdd\u7559\u539f\u503c\u3002"
+      },
+      "TOKEN_KEYS": {
+        "description": "setup.html \u751f\u6210\u7684\u7b7e\u540d\u5bc6\u94a5\u73af JSON\uff1b\u4fdd\u5bc6\u4fdd\u5b58\uff0c\u5347\u7ea7\u65f6\u4fdd\u7559\u539f\u503c\u3002"
+      },
+      "ADMIN_PASSWORD": {
+        "description": "setup.html \u751f\u6210\u7684\u7ba1\u7406\u5bc6\u7801\uff08\u81f3\u5c11 16 \u5b57\u7b26\uff09\uff0c\u4ec5\u4f9b\u90e8\u7f72\u8005\u767b\u5f55\u3002"
+      },
+      "TURN_KEY_ID": {
+        "description": "\u5728 Cloudflare Realtime TURN \u4eea\u8868\u677f\u521b\u5efa\u7684 TURN key ID\u3002"
+      },
+      "TURN_API_TOKEN": {
+        "description": "\u5bf9\u5e94 TURN key \u7684 API token\uff0c\u53ea\u653e\u5728 Worker secret \u4e2d\u3002"
+      }
+    }
+  }
+}

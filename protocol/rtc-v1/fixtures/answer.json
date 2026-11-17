@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "call_id": "call-test",
+  "leg_id": "leg-test",
+  "attempt_id": "attempt-test",
+  "operation_id": "answer-test",
+  "generation": 1,
+  "revision": 1,
+  "kind": "answer",
+  "sdp": "v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n"
+}

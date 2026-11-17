@@ -1,0 +1,14 @@
+{
+  "server_time": "2026-10-03T12:00:30Z",
+  "online": true,
+  "stale_after_seconds": 90,
+  "mapping_revision": 5,
+  "invalidated_sim_ids": [
+    "e3000000-0000-4000-8000-000000000001"
+  ],
+  "extensions": [
+    "sim_radio",
+    "sim_country",
+    "mesh"
+  ]
+}

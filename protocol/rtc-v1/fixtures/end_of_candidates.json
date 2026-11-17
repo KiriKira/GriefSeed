@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "call_id": "call-test",
+  "leg_id": "leg-test",
+  "attempt_id": "attempt-test",
+  "operation_id": "end-of-candidates-test",
+  "generation": 1,
+  "revision": 0,
+  "kind": "end_of_candidates"
+}

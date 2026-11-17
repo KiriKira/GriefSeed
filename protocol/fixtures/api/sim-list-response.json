@@ -1,0 +1,36 @@
+{
+  "mapping_revision": 4,
+  "sims": [
+    {
+      "sim_id": "e3000000-0000-4000-8000-000000000001",
+      "slot_index": 0,
+      "label": "Work",
+      "carrier_name": "Carrier A",
+      "phone_number": null,
+      "state": "active",
+      "mapping_revision": 4,
+      "identity_verified": true,
+      "service_state": "in_service",
+      "radio": {
+        "signal_level": 3,
+        "network_type": "LTE",
+        "network_operator": "Carrier A",
+        "roaming": false,
+        "country_iso": "CN",
+        "updated_at": "2026-10-03T12:00:00Z"
+      }
+    },
+    {
+      "sim_id": "e3000000-0000-4000-8000-000000000002",
+      "slot_index": 1,
+      "label": "Personal",
+      "carrier_name": null,
+      "phone_number": null,
+      "state": "pending_local_confirmation",
+      "mapping_revision": 4,
+      "identity_verified": false,
+      "service_state": null,
+      "radio": null
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "call_id": "22222222-2222-4222-8222-222222222222",
+  "gateway_id": "33333333-3333-4333-8333-333333333333",
+  "client_id": "11111111-1111-4111-8111-111111111111",
+  "sim_id": "44444444-4444-4444-8444-444444444444",
+  "mapping_revision": 1,
+  "direction": "incoming",
+  "state": "ended",
+  "state_revision": 2,
+  "from": "+8613800000000",
+  "to": "gsm-inbound",
+  "reason": "answered_elsewhere",
+  "created_at": "2026-10-04T03:30:00Z",
+  "expires_at": "2026-10-04T03:30:25Z",
+  "ended_at": "2026-10-04T03:30:06Z"
+}
