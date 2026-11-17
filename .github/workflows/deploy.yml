@@ -1,4 +1,4 @@
-name: Deploy
+name: Deploy and release
 
 on:
   push:
@@ -15,14 +15,34 @@ concurrency:
 
 jobs:
   test:
-    name: Test
+    name: Test and build
     runs-on: ubuntu-latest
+    outputs:
+      source_commit: ${{ steps.source.outputs.commit }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: npm
+      - name: Resolve source commit and validate release version
+        id: source
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+              echo '::error::Stable release tags must use vMAJOR.MINOR.PATCH.'
+              exit 1
+            }
+            version=$(node -p 'JSON.parse(require("fs").readFileSync("package.json", "utf8")).version')
+            [[ "$RELEASE_TAG" == "v$version" ]] || {
+              echo '::error::Release tag must match package.json version.'
+              exit 1
+            }
+          fi
       - run: npm ci
       - run: npm run protocol
       - run: npm run format:check
@@ -31,6 +51,14 @@ jobs:
       - run: npm test
         env:
           WRANGLER_SEND_METRICS: 'false'
+      - name: Preserve the tested Worker bundle
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: worker-bundle
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
 
   deploy:
     name: Deploy to Cloudflare Workers
@@ -43,34 +71,37 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - name: Download the tested Worker bundle
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/download-artifact@v4
+        with:
+          name: worker-bundle
+          path: dist
       - name: Deploy the Worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           WRANGLER_SEND_METRICS: 'false'
-        run: npm run deploy 2>&1 | tee deploy.log
-      - name: Smoke test the deployment
-        if: always() && !cancelled()
         run: |
-          set -uo pipefail
-          url=$(grep -oE 'https://[a-z0-9-]+(\.[a-z0-9-]+)*\.workers\.dev' deploy.log | tail -1 || true)
-          if [ -z "$url" ]; then
-            echo "No deployment URL in the wrangler output; nothing was verified." >&2
-            exit 1
+          set -euo pipefail
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            # Publish the same bundle that passed tests and becomes the release asset.
+            test -s dist/index.js
+            npm run deploy -- dist/index.js --no-bundle
+          else
+            npm run deploy
           fi
-          echo "Deployed host: $url"
-          code=000
-          for _ in $(seq 1 8); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' "$url/healthz" || true)
-            [ "$code" = "200" ] && break
-            sleep 5
-          done
+      - name: Smoke test the production domain
+        run: |
+          set -euo pipefail
+          url=https://griefseed.openkiri.zip
+          code=$(curl --connect-timeout 10 --max-time 30 -sS -o /dev/null -w '%{http_code}' "$url/healthz")
           echo "GET /healthz -> $code"
-          if [ "$code" != "200" ]; then
-            echo "Health check did not return 200." >&2
+          if [[ "$code" != 200 ]]; then
+            echo 'Health check did not return 200.' >&2
             exit 1
           fi
-          caps=$(curl -sf "$url/v1/capabilities" || true)
+          caps=$(curl --connect-timeout 10 --max-time 30 -fsS "$url/v1/capabilities")
           echo "$caps"
           for needle in '"protocol_version":1' 'rtc_control_ws_v1' 'cold_standby_v1' 'test_call_v1'; do
             if ! printf '%s' "$caps" | grep -q "$needle"; then
@@ -79,3 +110,79 @@ jobs:
             fi
           done
           echo "Deployment verified at $url"
+
+  release:
+    name: Publish GitHub Release
+    needs: [test, deploy]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+      SOURCE_COMMIT: ${{ needs.test.outputs.source_commit }}
+    steps:
+      - name: Download the deployed Worker bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: worker-bundle
+          path: dist
+      - name: Package release assets and provenance
+        run: |
+          set -euo pipefail
+          test -s dist/index.js
+          mkdir release
+          tar -czf "release/GriefSeed-${RELEASE_TAG}-worker.tar.gz" -C dist .
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          tag = os.environ['RELEASE_TAG']
+          commit = os.environ['SOURCE_COMMIT']
+          archive = Path('release') / f'GriefSeed-{tag}-worker.tar.gz'
+          manifest = {
+              'repository': os.environ['GITHUB_REPOSITORY'],
+              'tag': tag,
+              'version': tag,
+              'source_commit': commit,
+              'prerelease': False,
+              'production_url': 'https://griefseed.openkiri.zip',
+              'artifacts': [{
+                  'name': archive.name,
+                  'size': archive.stat().st_size,
+                  'sha256': hashlib.sha256(archive.read_bytes()).hexdigest(),
+              }],
+          }
+          Path('release/release-manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
+          Path('release-notes.md').write_text(
+              f'Source commit: `{commit}`\n\n'
+              'See release-manifest.json and SHA256SUMS.txt for artifact provenance and integrity.\n'
+          )
+          PY
+          (cd release && sha256sum "GriefSeed-${RELEASE_TAG}-worker.tar.gz" release-manifest.json > SHA256SUMS.txt)
+      - name: Publish a stable release without replacing existing releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          (cd release && sha256sum --check SHA256SUMS.txt)
+          gh release create "$RELEASE_TAG" --verify-tag --target "$SOURCE_COMMIT" \
+            --title "$RELEASE_TAG" --draft=false --prerelease=false --notes-file release-notes.md release/*
+          gh api "repos/$GH_REPO/releases/tags/$RELEASE_TAG" > published-release.json
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          release = json.loads(Path('published-release.json').read_text())
+          assert release['tag_name'] == os.environ['RELEASE_TAG']
+          assert release['name'] == os.environ['RELEASE_TAG']
+          assert release['prerelease'] is False and release['draft'] is False
+          assert release['body'].rstrip() == Path('release-notes.md').read_text().rstrip()
+          expected = {path.name: path.stat().st_size for path in Path('release').iterdir()}
+          assert {asset['name']: asset['size'] for asset in release['assets']} == expected
+          print(release['html_url'])
+          PY
