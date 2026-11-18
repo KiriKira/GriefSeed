@@ -4,5 +4,7 @@
   "durable_objects": {"bindings": [{"name": "DEPLOYMENT", "class_name": "Deployment"}]},
   "migrations": [{"tag": "v1", "new_sqlite_classes": ["Deployment"]}],
   "vars": {"TOKEN_KID": "primary", "CREDENTIAL_TTL": "7200", "NODE_ENABLED": "true"},
+  // Variables set in the dashboard (PUSH_ALLOWED_HOSTS, DEVICE_DAILY_BUDGET, ...) survive deploys.
+  "keep_vars": true,
   "observability": {"enabled": false}
 }

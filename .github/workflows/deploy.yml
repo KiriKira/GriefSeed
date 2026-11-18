@@ -82,16 +82,24 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           WRANGLER_SEND_METRICS: 'false'
+          # Optional repository variable: the Kyubey relay host(s) push may use.
+          PUSH_ALLOWED_HOSTS: ${{ vars.PUSH_ALLOWED_HOSTS }}
         run: |
           set -euo pipefail
+          extra=()
+          if [[ -n "${PUSH_ALLOWED_HOSTS:-}" ]]; then
+            extra+=(--var "PUSH_ALLOWED_HOSTS:${PUSH_ALLOWED_HOSTS}")
+          fi
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             # Publish the same bundle that passed tests and becomes the release asset.
             test -s dist/index.js
-            npm run deploy -- dist/index.js --no-bundle
+            npm run deploy -- dist/index.js --no-bundle "${extra[@]}"
           else
-            npm run deploy
+            npm run deploy -- "${extra[@]}"
           fi
       - name: Smoke test the production domain
+        env:
+          PUSH_ALLOWED_HOSTS: ${{ vars.PUSH_ALLOWED_HOSTS }}
         run: |
           set -euo pipefail
           url=https://griefseed.openkiri.zip
@@ -103,7 +111,9 @@ jobs:
           fi
           caps=$(curl --connect-timeout 10 --max-time 30 -fsS "$url/v1/capabilities")
           echo "$caps"
-          for needle in '"protocol_version":1' 'rtc_control_ws_v1' 'cold_standby_v1' 'test_call_v1'; do
+          needles=('"protocol_version":1' 'rtc_control_ws_v1' 'cold_standby_v1' 'test_call_v1')
+          if [[ -n "${PUSH_ALLOWED_HOSTS:-}" ]]; then needles+=('"push":true'); fi
+          for needle in "${needles[@]}"; do
             if ! printf '%s' "$caps" | grep -q "$needle"; then
               echo "Capabilities response is missing $needle." >&2
               exit 1
