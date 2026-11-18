@@ -15,7 +15,7 @@ Cloudflare Workers + SQLite Durable Objects 版 SoulGem：同一个部署提供�
 3. Wrangler 创建固定名称 `deployment` 的 SQLite DO；无需 D1。`NODE_ENABLED=true` 默认开启节点，设为 false 可仅提供 TURN 来源。
 4. 登录部署地址的管理页：生成一个加入码，让 Homura、Madoka 各扫码一次；同一码每个角色只能兑换一次，15 分钟有效。
    现有节点的用户也可发放独立来源 token，在手机“中继来源”设置里导入 `mahogsm://relay` 链接。
-5. 选用推送时，将 `PUSH_ALLOWED_HOSTS` 设为手机所用 Kyubey 服务的精确 HTTPS 主机名，逗号分隔。可在 Cloudflare 面板设置（`keep_vars` 让部署保留它），用仓库自带的部署工作流时也可设为同名的 GitHub Actions 仓库变量（Settings → Secrets and variables → Actions → Variables），每次部署都会带上并检查 `"push":true`。
+5. 推送默认允许官方 Madoka 构建所用的 Kyubey（`kyubey.openkiri.zip`，见 `wrangler.jsonc`）；手机使用其他 Kyubey 时，将 `PUSH_ALLOWED_HOSTS` 改为其精确 HTTPS 主机名，逗号分隔。可在 Cloudflare 面板设置（`keep_vars` 让部署保留它），用仓库自带的部署工作流时也可设为同名的 GitHub Actions 仓库变量（Settings → Secrets and variables → Actions → Variables），每次部署都会带上并检查 `"push":true`。
    默认不发推送；控制 WebSocket 与周期恢复仍可工作。没有声明推送能力时，手机不会误判已覆盖推送。
 
 管理页能发放/吊销来源 token、显示签发及撤销任务、撤销设备、查看设备操作计数、下载和恢复备份。

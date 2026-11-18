@@ -3,8 +3,10 @@
   "name": "griefseed", "main": "src/index.ts", "compatibility_date": "2026-08-01", "compatibility_flags": ["nodejs_compat"],
   "durable_objects": {"bindings": [{"name": "DEPLOYMENT", "class_name": "Deployment"}]},
   "migrations": [{"tag": "v1", "new_sqlite_classes": ["Deployment"]}],
-  "vars": {"TOKEN_KID": "primary", "CREDENTIAL_TTL": "7200", "NODE_ENABLED": "true"},
-  // Variables set in the dashboard (PUSH_ALLOWED_HOSTS, DEVICE_DAILY_BUDGET, ...) survive deploys.
+  // PUSH_ALLOWED_HOSTS: the Kyubey relay official Madoka builds register with.
+  // A deployment for builds with another relay lists that relay's host here instead.
+  "vars": {"TOKEN_KID": "primary", "CREDENTIAL_TTL": "7200", "NODE_ENABLED": "true", "PUSH_ALLOWED_HOSTS": "kyubey.openkiri.zip"},
+  // Variables set only in the dashboard (DEVICE_DAILY_BUDGET, ...) survive deploys; the ones above win.
   "keep_vars": true,
   "observability": {"enabled": false}
 }

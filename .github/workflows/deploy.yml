@@ -111,8 +111,8 @@ jobs:
           fi
           caps=$(curl --connect-timeout 10 --max-time 30 -fsS "$url/v1/capabilities")
           echo "$caps"
-          needles=('"protocol_version":1' 'rtc_control_ws_v1' 'cold_standby_v1' 'test_call_v1')
-          if [[ -n "${PUSH_ALLOWED_HOSTS:-}" ]]; then needles+=('"push":true'); fi
+          # wrangler.jsonc allows the official Kyubey by default, so push must be on.
+          needles=('"protocol_version":1' 'rtc_control_ws_v1' 'cold_standby_v1' 'test_call_v1' '"push":true')
           for needle in "${needles[@]}"; do
             if ! printf '%s' "$caps" | grep -q "$needle"; then
               echo "Capabilities response is missing $needle." >&2
