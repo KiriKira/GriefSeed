@@ -59,7 +59,6 @@ npx wrangler deploy
 - **升级：** 必须保留原有的 `DEPLOYMENT_ID` 和完整 `TOKEN_KEYS`，切勿重新生成。按钮部署会复制一份仓库，之后要自己把上游提交合进来再部署。
 - **轮换签名密钥：** 先往 `TOKEN_KEYS` 加一个新 kid，再把 `TOKEN_KID` 切过去；旧 kid 等手机换发完成后再删。
 - **备份：** 管理页导出的备份含短信明文，不含 Worker secrets，要和 secrets 一起妥善保存；上限 4 MiB / 20,000 行。恢复会撤销所有旧会话，手机需要重新配对。
-- **CI 部署：** `.github/workflows/deploy.yml` 需要仓库 secrets `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`，可选仓库变量 `PUSH_ALLOWED_HOSTS`。
 - **本地开发（Node.js 24）：** `npm ci && npm run schemas && npm run check && npm test`；复制 `.dev.vars.example` 为 `.dev.vars` 后运行 `npm run dev`，勿使用生产密钥。
 
 更多细节：[控制协议](docs/worker-protocol.md) · [请求额度说明](docs/request-budget.md) · [验收边界](docs/validation.md) · [节点设计](docs/node-design.md)
